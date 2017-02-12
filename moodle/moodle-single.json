@@ -102,7 +102,7 @@
       "Type": "String",
       "MinLength": "3",
       "MaxLength": "20",
-      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "AllowedPattern" : "[a-zA-Z0-9 \\-]*",
       "ConstraintDescription" : "must contain only alphanumeric characters."
     }
   },
@@ -258,12 +258,20 @@
                 "mode" : "000500",
                 "owner" : "root",
                 "group" : "root"
+              },
+              "/etc/cron.d/moodle" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "* * * * * * apache /usr/bin/php /var/www/html/admin/cli/cron.php"
+                ] ] },
+                "owner": "root",
+                "group": "root"
               }
             },
             "services" : {
               "sysvinit" : {
                 "httpd"  : { "enabled" : "true", "ensureRunning" : "true" },
-                "mysqld" : { "enabled" : "true", "ensureRunning" : "true" }
+                "mysqld" : { "enabled" : "true", "ensureRunning" : "true" },
+                "crond" : { "enabled" : "true", "ensureRunning" : "true" }
               }
             }
           },
@@ -335,41 +343,6 @@
         "ResourceSignal" : {
           "Timeout" : "PT15M"
         }
-      }
-    },
-
-    "SNSAlarmTopic" : {
-      "Type" : "AWS::SNS::Topic",
-      "Properties" : {
-        "TopicName" : "SNSAlarmTopic"
-      }
-    },
-
-    "MySubscription" : {
-      "Type" : "AWS::SNS::Subscription",
-      "Properties" : {
-        "Endpoint" : { "Ref" : "MoodleAdminEmail" },
-        "Protocol" : "email",
-        "TopicArn" : {"Ref" : "SNSAlarmTopic"}
-      }
-    },
-
-    "WebHighServerAlarm" : {
-      "Type" : "AWS::CloudWatch::Alarm",
-      "Properties" : {
-        "AlarmDescription" : "WebServer High CPU alarm",
-        "AlarmActions" : [ { "Ref" : "SNSAlarmTopic" } ],
-        "MetricName" : "CPUUtilization",
-        "Namespace" : "AWS/EC2",
-        "Statistic" : "Average",
-        "Period" : "60",
-        "EvaluationPeriods" : "3",
-        "Threshold" : "70",
-        "ComparisonOperator" : "GreaterThanThreshold",
-        "Dimensions" : [ {
-          "Name" : "InstanceId",
-          "Value" : {"Ref" : "WebServer"}
-        } ]
       }
     }
   },

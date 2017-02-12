@@ -1,7 +1,7 @@
 {
   "AWSTemplateFormatVersion" : "2010-09-09",
 
-  "Description" : "Moodle Single Server",
+  "Description" : "Moodle Single Server, with High CPU Alarm",
 
   "Parameters" : {
 
@@ -102,7 +102,7 @@
       "Type": "String",
       "MinLength": "3",
       "MaxLength": "20",
-      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "AllowedPattern" : "[a-zA-Z0-9 \\-]*",
       "ConstraintDescription" : "must contain only alphanumeric characters."
     }
   },
@@ -252,18 +252,25 @@
                   "$CFG->dataroot  = '/var/www/data';\n",
                   "$CFG->directorypermissions = 02777;\n",
                   "$CFG->admin = 'admin';\n",
-                  "$CFG->cronclionly = false;\n",
                   "\nrequire_once(__DIR__ . '/lib/setup.php');\n"
                 ]]},
-                "mode" : "000500",
+                "mode" : "000700",
                 "owner" : "root",
                 "group" : "root"
+              },
+              "/etc/cron.d/moodle" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "* * * * * * apache /usr/bin/php /var/www/html/admin/cli/cron.php"
+                ] ] },
+                "owner": "root",
+                "group": "root"
               }
             },
             "services" : {
               "sysvinit" : {
                 "httpd"  : { "enabled" : "true", "ensureRunning" : "true" },
-                "mysqld" : { "enabled" : "true", "ensureRunning" : "true" }
+                "mysqld" : { "enabled" : "true", "ensureRunning" : "true" },
+                "crond" : { "enabled" : "true", "ensureRunning" : "true" }
               }
             }
           },
@@ -315,6 +322,7 @@
         "InstanceType"   : { "Ref" : "InstanceType" },
         "SecurityGroups" : [ {"Ref" : "WebServerSecurityGroup"} ],
         "KeyName"        : { "Ref" : "KeyName" },
+        "Tags": [ { "Key":"Name", "Value":"Moodle Web Server" }],
         "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
           "#!/bin/bash -xe\n",
           "yum update -y aws-cfn-bootstrap\n",
@@ -335,6 +343,38 @@
         "ResourceSignal" : {
           "Timeout" : "PT15M"
         }
+      }
+    },
+
+    "SNSAlarmTopic" : {
+      "Type" : "AWS::SNS::Topic"
+    },
+
+    "MySubscription" : {
+      "Type" : "AWS::SNS::Subscription",
+      "Properties" : {
+        "Endpoint" : { "Ref" : "MoodleAdminEmail" },
+        "Protocol" : "email",
+        "TopicArn" : {"Ref" : "SNSAlarmTopic"}
+      }
+    },
+
+    "WebHighServerAlarm" : {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmDescription" : "WebServer High CPU alarm",
+        "AlarmActions" : [ { "Ref" : "SNSAlarmTopic" } ],
+        "MetricName" : "CPUUtilization",
+        "Namespace" : "AWS/EC2",
+        "Statistic" : "Average",
+        "Period" : "60",
+        "EvaluationPeriods" : "3",
+        "Threshold" : "70",
+        "ComparisonOperator" : "GreaterThanThreshold",
+        "Dimensions" : [ {
+          "Name" : "InstanceId",
+          "Value" : {"Ref" : "WebServer"}
+        } ]
       }
     }
   },
