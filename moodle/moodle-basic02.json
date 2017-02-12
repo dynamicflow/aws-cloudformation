@@ -1,0 +1,383 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Moodle Single Server",
+
+  "Parameters" : {
+
+    "KeyName": {
+      "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription" : "must be the name of an existing EC2 KeyPair."
+    },
+
+    "InstanceType" : {
+      "Description" : "WebServer EC2 instance type",
+      "Type" : "String",
+      "Default" : "t2.medium",
+      "AllowedValues" : [ "t2.micro", "t2.small", "t2.medium", "t2.large", "t2.xlarge"],
+      "ConstraintDescription" : "must be a valid EC2 instance type."
+    },
+
+    "SSHLocation": {
+      "Description": "The IP address range that can be used to SSH to the EC2 instances",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "Default": "0.0.0.0/0",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+    },
+
+    "DBName" : {
+      "Default": "moodledb",
+      "Description" : "The Moodle database name",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+    },
+
+    "DBUser" : {
+      "Default": "moodle",
+      "Description" : "The Moodle database admin account username",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "16",
+      "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+    },
+
+    "DBPassword" : {
+      "NoEcho": "true",
+      "Description" : "The Moodle database admin account password",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+
+    "DBRootPassword" : {
+      "NoEcho": "true",
+      "Description" : "MySQL root password",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+
+    "MoodleAdminPassword" : {
+      "NoEcho": "true",
+      "Description" : "Moodle Admin Password",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+
+    "MoodleAdminEmail" : {
+      "Description" : "Moodle Admin Email",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "200",
+      "AllowedPattern" : "[a-zA-Z0-9@\\.]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+
+    "MoodleSiteFullName" : {
+      "Description" : "Moodle Site Full Name",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "200",
+      "AllowedPattern" : "[a-zA-Z0-9 \\-]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+
+    "MoodleSiteShortName" : {
+      "Description" : "Moodle Site Short Name",
+      "Type": "String",
+      "MinLength": "3",
+      "MaxLength": "20",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    }
+  },
+
+  "Mappings" : {
+    "AWSInstanceType2Arch" : {
+      "t2.micro"    : { "Arch" : "HVM64"  },
+      "t2.small"    : { "Arch" : "HVM64"  },
+      "t2.medium"   : { "Arch" : "HVM64"  },
+      "t2.large"    : { "Arch" : "HVM64"  },
+      "t2.xlarge"   : { "Arch" : "HVM64"  },
+    },
+
+    "AWSInstanceType2NATArch" : {
+      "t2.micro"    : { "Arch" : "NATHVM64"  },
+      "t2.small"    : { "Arch" : "NATHVM64"  },
+      "t2.medium"   : { "Arch" : "NATHVM64"  },
+      "t2.large"    : { "Arch" : "NATHVM64"  },
+      "t2.xlarge"   : { "Arch" : "NATHVM64"  }
+    }
+  ,
+    "AWSRegionArch2AMI" : {
+      "us-east-1"        : {"PV64" : "ami-8ff710e2", "HVM64" : "ami-0b33d91d", "HVMG2" : "ami-4afd1d27"},
+      "us-east-2"        : {"HVM64" : "ami-c55673a0"},
+      "us-west-2"        : {"PV64" : "ami-eff1028f", "HVM64" : "ami-f303fb93", "HVMG2" : "ami-ee897b8e"},
+      "us-west-1"        : {"PV64" : "ami-ac85fbcc", "HVM64" : "ami-11790371", "HVMG2" : "ami-69106909"},
+      "eu-west-1"        : {"PV64" : "ami-23ab2250", "HVM64" : "ami-c39604b0", "HVMG2" : "ami-936de5e0"},
+      "eu-central-1"     : {"PV64" : "ami-27c12348", "HVM64" : "ami-7df01e12", "HVMG2" : "ami-8e7092e1"},
+      "ap-northeast-1"   : {"PV64" : "ami-26160d48", "HVM64" : "ami-6154bb00", "HVMG2" : "ami-91809aff"},
+      "ap-northeast-2"   : {"PV64" : "NOT_SUPPORTED", "HVM64" : "ami-69e92207", "HVMG2" : "NOT_SUPPORTED"},
+      "ap-southeast-1"   : {"PV64" : "ami-f3dd0a90", "HVM64" : "ami-a2c111c1", "HVMG2" : "ami-3c30e75f"},
+      "ap-southeast-2"   : {"PV64" : "ami-8f94b9ec", "HVM64" : "ami-d9d7f9ba", "HVMG2" : "ami-543d1137"},
+      "sa-east-1"        : {"PV64" : "ami-e188018d", "HVM64" : "ami-106ee57c", "HVMG2" : "NOT_SUPPORTED"},
+      "cn-north-1"       : {"PV64" : "ami-77a46e1a", "HVM64" : "ami-05a66c68", "HVMG2" : "NOT_SUPPORTED"}
+    }
+
+  },
+
+  "Resources" : {
+    "WebServerSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable HTTP access via port 80 locked down to the load balancer + SSH access",
+        "SecurityGroupIngress" : [
+          {"IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Ref" : "SSHLocation"}}
+        ]
+      }
+    },
+
+    "WebServer": {
+      "Type" : "AWS::EC2::Instance",
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+            "moodle_install" : ["install_cfn", "install_moodle", "configure_moodle"]
+          },
+          "install_cfn" : {
+            "files": {
+              "/etc/cfn/cfn-hup.conf": {
+                "content": { "Fn::Join": [ "", [
+                  "[main]\n",
+                  "stack=", { "Ref": "AWS::StackId" }, "\n",
+                  "region=", { "Ref": "AWS::Region" }, "\n"
+                ]]},
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                "content": { "Fn::Join": [ "", [
+                  "[cfn-auto-reloader-hook]\n",
+                  "triggers=post.update\n",
+                  "path=Resources.WebServer.Metadata.AWS::CloudFormation::Init\n",
+                  "action=/opt/aws/bin/cfn-init -v ",
+                  "         --stack ", { "Ref" : "AWS::StackName" },
+                  "         --resource WebServer ",
+                  "         --configsets moodle_install ",
+                  "         --region ", { "Ref" : "AWS::Region" }, "\n"
+                ]]},
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "cfn-hup" : { "enabled" : "true", "ensureRunning" : "true",
+                  "files" : ["/etc/cfn/cfn-hup.conf", "/etc/cfn/hooks.d/cfn-auto-reloader.conf"] }
+              }
+            }
+          },
+
+          "install_moodle" : {
+            "packages" : {
+              "yum" : {
+                "httpd24-tools"         : [],
+                "httpd24"               : [],
+                "php56"                 : [],
+                "php56-cli"             : [],
+                "php56-gd"              : [],
+                "php56-intl"            : [],
+                "php56-mbstring"        : [],
+                "php56-opcache"         : [],
+                "php56-soap"            : [],
+                "php56-xml"             : [],
+                "php56-xmlrpc"          : [],
+                "php56-process"         : [],
+                "php56-jsonc"           : [],
+                "php56-pecl-memcached"  : [],
+                "php56-mysqlnd"         : [],
+                "mysql"                 : [],
+                "mysql-server"          : [],
+                "mysql-libs"            : []
+              }
+            },
+            "sources" : {
+              "/var/www" : "https://download.moodle.org/download.php/direct/stable32/moodle-3.2.1.tgz"
+            },
+            "files" : {
+              "/tmp/setup.mysql" : {
+                "content" : { "Fn::Join" : ["", [
+                  "CREATE DATABASE ", { "Ref" : "DBName" }, ";\n",
+                  "CREATE USER '", { "Ref" : "DBUser" }, "'@'localhost' IDENTIFIED BY '", { "Ref" : "DBPassword" }, "';\n",
+                  "GRANT ALL ON ", { "Ref" : "DBName" }, ".* TO '", { "Ref" : "DBUser" }, "'@'localhost';\n",
+                  "FLUSH PRIVILEGES;\n"
+                ]]},
+                "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "/tmp/config.php" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "<?php\n",
+                  "unset($CFG);\n",
+                  "global $CFG;\n",
+                  "$CFG = new stdClass();\n",
+                  "\n$CFG->dbtype    = 'mysqli';\n",
+                  "$CFG->dblibrary = 'native';\n",
+                  "$CFG->dbhost    = 'localhost';\n",
+                  "$CFG->dbname    = '",{ "Ref" : "DBName" }, "';\n",
+                  "$CFG->dbuser    = '",{ "Ref" : "DBUser" }, "';\n",
+                  "$CFG->dbpass    = '",{ "Ref" : "DBPassword" }, "';\n",
+                  "$CFG->prefix    = '';\n",
+                  "$CFG->dboptions = array('dbpersist' => false,'dbsocket' => false,'dbport' => '','dbhandlesoptions' => false);\n",
+                  "$CFG->wwwroot   = 'http://WWW_ROOT';\n",
+                  "$CFG->dataroot  = '/var/www/data';\n",
+                  "$CFG->directorypermissions = 02777;\n",
+                  "$CFG->admin = 'admin';\n",
+                  "$CFG->cronclionly = false;\n",
+                  "\nrequire_once(__DIR__ . '/lib/setup.php');\n"
+                ]]},
+                "mode" : "000500",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "httpd"  : { "enabled" : "true", "ensureRunning" : "true" },
+                "mysqld" : { "enabled" : "true", "ensureRunning" : "true" }
+              }
+            }
+          },
+          "configure_moodle" : {
+            "commands" : {
+              "01_set_mysql_root_password" : {
+                "command" : { "Fn::Join" : ["", ["mysqladmin -u root password '", { "Ref" : "DBRootPassword" }, "'"]]},
+                "test" : { "Fn::Join" : ["", ["$(mysql ", { "Ref" : "DBName" }, " -u root --password='", { "Ref" : "DBRootPassword" }, "' >/dev/null 2>&1 </dev/null); (( $? != 0 ))"]]}
+              },
+              "02_create_database" : {
+                "command" : { "Fn::Join" : ["", ["mysql -u root --password='", { "Ref" : "DBRootPassword" }, "' < /tmp/setup.mysql"]]},
+                "test" : { "Fn::Join" : ["", ["$(mysql ", { "Ref" : "DBName" }, " -u root --password='", { "Ref" : "DBRootPassword" }, "' >/dev/null 2>&1 </dev/null); (( $? != 0 ))"]]}
+              },
+              "03_configure_moodle" : {
+                "command" : { "Fn::Join" : [ ";", [
+                    "mv -fT /var/www/moodle /var/www/html",
+                    "sed -i \"s/WWW_ROOT/`curl -s http://169.254.169.254/latest/meta-data/public-hostname`/g\" /tmp/config.php",
+                    "mv /tmp/config.php /var/www/html",
+                    "chown -R root /var/www/html",
+                    "chmod -R 0755 /var/www/html"
+                ]]}
+
+              },
+              "04_create_data_dir" : {
+                "command": { "Fn::Join" : [ ";", [
+                    "mkdir /var/www/data",
+                    "chmod 0777 /var/www/data"
+                ]]}
+              },
+              "05_install_database": {
+                "cwd": "/var/www/html/admin/cli",
+                "command": { "Fn::Join" : ["", [
+                    "php install_database.php",
+                    " --lang=pt_BR",
+                    " --adminpass=",{ "Ref" : "MoodleAdminPassword" },
+                    " --adminemail=",{ "Ref" : "MoodleAdminEmail" },
+                    " --fullname=", { "Ref" : "MoodleSiteFullName" },
+                    " --shortname=",{ "Ref" : "MoodleSiteShortName" },
+                    " --agree-license"
+                ]]}
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "ImageId" : { "Fn::FindInMap" : [ "AWSRegionArch2AMI", { "Ref" : "AWS::Region" },
+          { "Fn::FindInMap" : [ "AWSInstanceType2Arch", { "Ref" : "InstanceType" }, "Arch" ] } ] },
+        "InstanceType"   : { "Ref" : "InstanceType" },
+        "SecurityGroups" : [ {"Ref" : "WebServerSecurityGroup"} ],
+        "KeyName"        : { "Ref" : "KeyName" },
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+          "#!/bin/bash -xe\n",
+          "yum update -y aws-cfn-bootstrap\n",
+
+          "/opt/aws/bin/cfn-init -v ",
+          "         --stack ", { "Ref" : "AWS::StackName" },
+          "         --resource WebServer ",
+          "         --configsets moodle_install ",
+          "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+          "/opt/aws/bin/cfn-signal -e $? ",
+          "         --stack ", { "Ref" : "AWS::StackName" },
+          "         --resource WebServer ",
+          "         --region ", { "Ref" : "AWS::Region" }, "\n"
+        ]]}}
+      },
+      "CreationPolicy" : {
+        "ResourceSignal" : {
+          "Timeout" : "PT15M"
+        }
+      }
+    },
+
+    "SNSAlarmTopic" : {
+      "Type" : "AWS::SNS::Topic",
+      "Properties" : {
+        "TopicName" : "SNSAlarmTopic"
+      }
+    },
+
+    "MySubscription" : {
+      "Type" : "AWS::SNS::Subscription",
+      "Properties" : {
+        "Endpoint" : { "Ref" : "MoodleAdminEmail" },
+        "Protocol" : "email",
+        "TopicArn" : {"Ref" : "SNSAlarmTopic"}
+      }
+    },
+
+    "WebHighServerAlarm" : {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmDescription" : "WebServer High CPU alarm",
+        "AlarmActions" : [ { "Ref" : "SNSAlarmTopic" } ],
+        "MetricName" : "CPUUtilization",
+        "Namespace" : "AWS/EC2",
+        "Statistic" : "Average",
+        "Period" : "60",
+        "EvaluationPeriods" : "3",
+        "Threshold" : "70",
+        "ComparisonOperator" : "GreaterThanThreshold",
+        "Dimensions" : [ {
+          "Name" : "InstanceId",
+          "Value" : {"Ref" : "WebServer"}
+        } ]
+      }
+    }
+  },
+
+  "Outputs" : {
+    "WebsiteURL" : {
+      "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "WebServer", "PublicDnsName" ]}, "/" ]]},
+      "Description" : "Moodle Website"
+    }
+  }
+}
