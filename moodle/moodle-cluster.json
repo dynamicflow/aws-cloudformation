@@ -438,10 +438,10 @@
               },
               "/etc/cron.d/nfsstat" : {
                 "content" : { "Fn::Join" : [ "", [
-                  "* * * * * /usr/sbin/nfsstat | /home/ec2-user/post_nfsstat\n"
+                  "* * * * * root /usr/sbin/nfsstat | /home/ec2-user/post_nfsstat\n"
                 ] ] },
-                "owner": "ec2-user",
-                "group": "ec2-user"
+                "owner": "root",
+                "group": "root"
               }
             },
             "commands" : {
@@ -452,7 +452,7 @@
                 "command" : "chmod 0777 /var/www/data"
               },
               "03_fstab" : {
-                "command": "echo \"${FileSystem}.efs.${AWS::Region}.amazonaws.com:/ /var/www/data nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 0 0\" >> /etc/fstab"
+                "command": { "Fn::Sub":"echo \"${FileSystem}.efs.${AWS::Region}.amazonaws.com:/ /var/www/data nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 0 0\" >> /etc/fstab" }
               }
             },
             "services" : {
@@ -513,6 +513,12 @@
         "MinSize": "1",
         "MaxSize": { "Ref": "AsgMaxSize" },
         "DesiredCapacity": { "Ref": "AsgMaxSize" },
+        "MetricsCollection": [
+          {
+            "Granularity" : "5Minute",
+            "Metrics" : [ "GroupInServiceInstances", "GroupTotalInstances" ]
+          }
+        ],
         "Tags": [
           { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "WebServer" ] ] }, "PropagateAtLaunch": "true" }
         ]
