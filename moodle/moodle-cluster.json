@@ -512,10 +512,11 @@
         "LaunchConfigurationName": { "Ref": "LaunchConfiguration" },
         "MinSize": "1",
         "MaxSize": { "Ref": "AsgMaxSize" },
-        "DesiredCapacity": { "Ref": "AsgMaxSize" },
+        "DesiredCapacity": "1",
+        "TargetGroupARNs": [ { "Ref": "LoadBalancerTG" } ],
         "MetricsCollection": [
           {
-            "Granularity" : "5Minute",
+            "Granularity" : "1Minute",
             "Metrics" : [ "GroupInServiceInstances", "GroupTotalInstances" ]
           }
         ],
@@ -523,10 +524,64 @@
           { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "WebServer" ] ] }, "PropagateAtLaunch": "true" }
         ]
       }
+    },
+    "LoadBalancer": {
+      "Type" : "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties" : {
+        "LoadBalancerAttributes" : [],
+        "Name" : { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" },"LoadBalancer" ] ] },
+        "Scheme" : "internet-facing",
+        "SecurityGroups" : [ { "Ref": "WebServerSecurityGroup" } ],
+        "Subnets" : [{ "Ref": "Subnet1" }, { "Ref": "Subnet2" }, { "Ref": "Subnet3" }],
+        "Tags" : []
+      }
+    },
+    "LoadBalancerTG": {
+      "Type" : "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties" : {
+        "HealthCheckIntervalSeconds" : 30,
+        "HealthCheckPath" :  "/",
+        "HealthCheckPort" : "traffic-port",
+        "HealthCheckProtocol" : "HTTP",
+        "HealthCheckTimeoutSeconds" : 15,
+        "HealthyThresholdCount" : 3,
+        "Matcher" : { "HttpCode" : "303,200" },
+        "Name" : { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" },"TargetGroup" ] ] },
+        "Port" : 80,
+        "Protocol" : "HTTP",
+        "TargetGroupAttributes" : [
+          {
+            "Key": "stickiness.enabled",
+            "Value": "true"
+          },
+          {
+            "Key": "stickiness.type",
+            "Value": "lb_cookie"
+          }
+        ],
+        "UnhealthyThresholdCount" : 2,
+        "VpcId" : { "Ref": "VPC" }
+      }
+    },
+    "LoadBalancerListener": {
+      "Type" : "AWS::ElasticLoadBalancingV2::Listener",
+      "Properties" : {
+        "DefaultActions" : [
+          { "TargetGroupArn" : { "Ref" : "LoadBalancerTG" }, "Type" : "forward" }
+        ],
+        "LoadBalancerArn" : { "Ref" : "LoadBalancer" },
+        "Port" : 80,
+        "Protocol" : "HTTP"
+      }
     }
   },
 
   "Outputs": {
+    "LoadBalancer" : {
+      "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "LoadBalancer", "DNSName" ]}, "/" ]]},
+      "Description" : "Load Balancer URL"
+    },
+    
     "VPC": {
       "Description": "VPC",
       "Value": {
