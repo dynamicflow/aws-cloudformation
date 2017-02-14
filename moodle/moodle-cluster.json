@@ -7,6 +7,10 @@
       "Type": "String",
       "Default": "0.0.0.0/0"
     },
+    "R53HostedZoneId": {
+      "Description": "Route53 Domain Name",
+      "Type": "AWS::Route53::HostedZone::Id"
+    },
     "InstanceType" : {
       "Description" : "WebServer EC2 instance type",
       "Type" : "String",
@@ -21,7 +25,121 @@
     "AsgMaxSize": {
       "Type": "Number",
       "Description": "Maximum size and initial desired capacity of Auto Scaling Group",
-      "Default": "1"
+      "Default": "2"
+    },
+    "DBName" : {
+      "Default": "moodledb",
+      "Description" : "Database name",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+    },
+    "DBMasterPassword" : {
+      "NoEcho": "true",
+      "Description" : "Master Password",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+    "DBAllocatedStorage" : {
+      "Description" : "GB",
+      "Default": "10",
+      "Type": "Number",
+      "MinValue": "5",
+      "MaxValue": "200",
+      "ConstraintDescription" : "must contain only integer."
+    },
+    "DBInstanceClass" : {
+      "Description" : "RDS instance class",
+      "Type" : "String",
+      "Default" : "db.t2.small",
+      "AllowedValues" : [ "db.t2.micro","db.t2.small","db.t2.medium","db.t2.large", "db.m3.medium", "db.m3.large", "db.m3.xlarge", "db.m3.2xlarge","db.m4.large","db.m4.xlarge","db.m4.2xlarge","db.m4.4xlarge","db.m4.10xlarge","db.r3.large","db.r3.xlarge","db.r3.2xlarge","db.r3.4xlarge","db.r3.8xlarge"],
+      "ConstraintDescription" : "must be a valid RDS instance class."
+    },
+    "DBMultiAZ" : {
+      "Type": "String",
+      "Description": "Deploy in multiple Availability Zones",
+      "AllowedValues": [ "yes", "no" ],
+      "Default": "no"
+    },
+    "MoodleAdminPassword" : {
+      "NoEcho": "true",
+      "Description" : "Moodle Admin Password",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+    "MoodleAdminEmail" : {
+      "Description" : "Moodle Admin Email",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "200",
+      "AllowedPattern" : "[a-zA-Z0-9@\\.]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+    "MoodleSiteFullName" : {
+      "Description" : "Moodle Site Full Name",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "200",
+      "AllowedPattern" : "[a-zA-Z0-9 \\-]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+    "MoodleSiteShortName" : {
+      "Description" : "Moodle Site Short Name",
+      "Type": "String",
+      "MinLength": "3",
+      "MaxLength": "20",
+      "AllowedPattern" : "[a-zA-Z0-9 \\-]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    }
+  },
+
+  "Metadata" : {
+    "AWS::CloudFormation::Interface" : {
+      "ParameterGroups" : [
+        {
+          "Label" : { "default" : "Moodle Configuration" },
+          "Parameters" : [ "MoodleAdminEmail", "MoodleAdminPassword", "MoodleSiteFullName", "MoodleSiteShortName" ]
+        },
+        {
+          "Label" : { "default" : "Network Configuration" },
+          "Parameters" : [ "R53HostedZoneId", "CorporateCidrIp"]
+        },
+        {
+          "Label" : { "default" : "Web Server Configuration" },
+          "Parameters" : [ "InstanceType", "KeyName", "AsgMaxSize" ]
+        },
+        {
+          "Label" : { "default":"Database Configuration" },
+          "Parameters" : [ "DBInstanceClass", "DBName", "DBMasterPassword", "DBAllocatedStorage", "DBMultiAZ" ]
+        }
+      ],
+      "ParameterLabels" : {
+        "MoodleAdminEmail": { "default" : "Admin Email" },
+        "MoodleAdminPassword": { "default" : "Admin Password" },
+        "MoodleSiteFullName": { "default" : "Site Full Name" },
+        "MoodleSiteShortName": { "default" : "Site Short Name" },
+
+        "R53HostedZoneId": { "default" : "Domain Name" },
+        "CorporateCidrIp": { "default" : "Admin IP Address" },
+
+        "InstanceType": { "default" : "Instance Type" },
+        "KeyName": { "default" : "SSH Key Name" },
+        "AsgMaxSize" : { "default" : "Maximum Nodes"},
+
+        "DBInstanceClass": { "default" : "Maximum Nodes" },
+        "DBName": { "default" : "Name" },
+        "DBMasterPassword": { "default" : "Password" },
+        "DBAllocatedStorage": { "default" : "Capacity" },
+        "DBMultiAZ": { "default" : "High Availability" }
+      }
     }
   },
 
@@ -33,7 +151,6 @@
       "t2.large"    : { "Arch" : "HVM64"  },
       "t2.xlarge"   : { "Arch" : "HVM64"  }
     },
-
     "AWSInstanceType2NATArch" : {
       "t2.micro"    : { "Arch" : "NATHVM64"  },
       "t2.small"    : { "Arch" : "NATHVM64"  },
@@ -41,7 +158,6 @@
       "t2.large"    : { "Arch" : "NATHVM64"  },
       "t2.xlarge"   : { "Arch" : "NATHVM64"  }
     },
-
     "AWSRegionArch2AMI" : {
       "us-east-1"        : {"PV64" : "ami-7a3dd76c", "HVM64" : "ami-0b33d91d", "HVMG2" : "ami-0b33d91d"},
       "us-east-2"        : {"HVM64" : "ami-c55673a0"},
@@ -64,7 +180,8 @@
       {"Fn::Equals" : [{"Ref" : "AWS::Region"}, "cn-north-1" ]},
       {"Fn::Equals" : [{"Ref" : "AWS::Region"}, "us-east-2" ]}
     ]},
-    "Is-EC2-Classic" : { "Fn::Not" : [{ "Condition" : "Is-EC2-VPC"}]}
+    "Is-EC2-Classic" : { "Fn::Not" : [{ "Condition" : "Is-EC2-VPC"}]},
+    "Is-DBMultiAZ" : {"Fn::Equals" : [{"Ref" : "DBMultiAZ"}, "yes"]}
   },
 
   "Resources": {
@@ -329,7 +446,7 @@
       "Properties": {
         "PerformanceMode": "generalPurpose",
         "FileSystemTags": [
-          { "Key": "Name", "Value": { "Ref" : "AWS::StackName" } }
+          { "Key": "Name", "Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "MoodleData" ] ] } }
         ]
       }
     },
@@ -362,12 +479,14 @@
       "Metadata" : {
         "AWS::CloudFormation::Init" : {
           "configSets" : {
-            "MountConfig" : [ "setup", "mount" ]
+            "moodle_install" : ["setup", "install_moodle", "configure_moodle"]
           },
           "setup" : {
             "packages" : {
               "yum" : {
-                "nfs-utils" : []
+                "nfs-utils"     : [],
+                "httpd24-tools" : [],
+                "httpd24"       : []
               }
             },
             "files" : {
@@ -449,10 +568,16 @@
                 "command" : "mkdir -p /var/www/data"
               },
               "02_chmoddir" : {
-                "command" : "chmod 0777 /var/www/data"
+                "command" : "chmod 0770 /var/www/data"
               },
               "03_fstab" : {
                 "command": { "Fn::Sub":"echo \"${FileSystem}.efs.${AWS::Region}.amazonaws.com:/ /var/www/data nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 0 0\" >> /etc/fstab" }
+              },
+              "04_mount" : {
+                "command" : "mount /var/www/data"
+              },
+              "05_chown" : {
+                "command" : "chown apache:apache /var/www/data"
               }
             },
             "services" : {
@@ -461,10 +586,99 @@
               }
             }
           },
-          "mount" : {
+          "install_moodle" : {
+            "packages" : {
+              "yum" : {
+                "php56"                 : [],
+                "php56-cli"             : [],
+                "php56-gd"              : [],
+                "php56-intl"            : [],
+                "php56-mbstring"        : [],
+                "php56-opcache"         : [],
+                "php56-soap"            : [],
+                "php56-xml"             : [],
+                "php56-xmlrpc"          : [],
+                "php56-process"         : [],
+                "php56-jsonc"           : [],
+                "php56-pecl-memcached"  : [],
+                "php56-mysqlnd"         : []
+              }
+            },
+            "sources" : {
+              "/var/www" : "https://download.moodle.org/download.php/direct/stable32/moodle-3.2.1.tgz"
+            },
+            "files" : {
+              "/tmp/config.php" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "<?php\n",
+                  "unset($CFG);\n",
+                  "global $CFG;\n",
+                  "$CFG = new stdClass();\n",
+                  "\n$CFG->dbtype    = 'mysqli';\n",
+                  "$CFG->dblibrary = 'native';\n",
+                  "$CFG->dbhost    = '", { "Fn::GetAtt": [ "SQLDatabase", "Endpoint.Address" ] },"';\n",
+                  "$CFG->dbname    = '",{ "Ref" : "DBName" }, "';\n",
+                  "$CFG->dbuser    = 'master';\n",
+                  "$CFG->dbpass    = '",{ "Ref" : "DBMasterPassword" }, "';\n",
+                  "$CFG->prefix    = '';\n",
+                  "$CFG->dboptions = array('dbpersist' => false,'dbsocket' => false,'dbport' => '','dbhandlesoptions' => false);\n",
+                  "$CFG->wwwroot   = 'http://LB_NAME';\n",
+                  "$CFG->dataroot  = '/var/www/data';\n",
+                  "$CFG->directorypermissions = 02777;\n",
+                  "$CFG->admin = 'admin';\n",
+                  "\nrequire_once(__DIR__ . '/lib/setup.php');\n"
+                ]]},
+                "mode" : "000500",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "/etc/cron.d/moodle" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "* * * * * * apache /usr/bin/php /var/www/html/admin/cli/cron.php"
+                ] ] },
+                "owner": "root",
+                "group": "root"
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "httpd"  : { "enabled" : "true", "ensureRunning" : "true" },
+                "crond" : { "enabled" : "true", "ensureRunning" : "true" }
+              }
+            }
+          },
+          "configure_moodle" : {
             "commands" : {
-              "01_mount" : {
-                "command" : "mount /var/www/data"
+              "01_configure_moodle" : {
+                "command" : { "Fn::Join" : [ ";", [
+                  "mv -fT /var/www/moodle /var/www/html",
+                  { "Fn::Join" : [ "", [
+                      "export LB_NAME=`echo \"",
+                      { "Fn::GetAtt" : [ "LoadBalancer", "DNSName" ]},
+                      "\"|  tr \"[:upper:]\" \"[:lower:]\"`"
+                  ]]},
+                  "sed -i \"s/LB_NAME/$LB_NAME/g\" /tmp/config.php",
+                  "mv /tmp/config.php /var/www/html",
+                  "chown -R root /var/www/html",
+                  "chmod -R 0755 /var/www/html"
+                ]]}
+
+              },
+              "02_install_database": {
+                "cwd": "/var/www/html/admin/cli",
+                "command": { "Fn::Join" : ["", [
+                  "if [ -f /var/www/data/.dbinstalled ]; ",
+                  "then echo \"skipping database creation\"; ",
+                  "else touch /var/www/data/.dbinstalled; ",
+                  "php install_database.php",
+                  " --lang=pt_BR",
+                  " --adminpass=\"",{ "Ref" : "MoodleAdminPassword" },"\"",
+                  " --adminemail=",{ "Ref" : "MoodleAdminEmail" },
+                  " --fullname=\"", { "Ref" : "MoodleSiteFullName" },"\"",
+                  " --shortname=\"",{ "Ref" : "MoodleSiteShortName" },"\"",
+                  " --agree-license;",
+                  " fi"
+                ]]}
               }
             }
           }
@@ -481,14 +695,14 @@
         "KeyName": { "Ref": "KeyName" },
         "SecurityGroups": [ { "Ref": "WebServerSecurityGroup" } ],
         "IamInstanceProfile" : { "Ref" : "CloudWatchPutMetricsInstanceProfile" },
-        "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
           "#!/bin/bash -xe\n",
-          "yum install -y aws-cfn-bootstrap\n",
+          "yum update -y aws-cfn-bootstrap\n",
 
           "/opt/aws/bin/cfn-init -v ",
           "         --stack ", { "Ref" : "AWS::StackName" },
           "         --resource LaunchConfiguration ",
-          "         --configsets MountConfig ",
+          "         --configsets moodle_install ",
           "         --region ", { "Ref" : "AWS::Region" }, "\n",
 
           "/opt/aws/bin/cfn-signal -e $? ",
@@ -512,13 +726,21 @@
         "LaunchConfigurationName": { "Ref": "LaunchConfiguration" },
         "MinSize": "1",
         "MaxSize": { "Ref": "AsgMaxSize" },
-        "DesiredCapacity": "1",
+        "DesiredCapacity": { "Ref": "AsgMaxSize" },
         "TargetGroupARNs": [ { "Ref": "LoadBalancerTG" } ],
         "MetricsCollection": [
           {
             "Granularity" : "1Minute",
             "Metrics" : [ "GroupInServiceInstances", "GroupTotalInstances" ]
           }
+        ],
+        "NotificationConfigurations": [
+          { "NotificationTypes" : [
+              "autoscaling:EC2_INSTANCE_LAUNCH",
+              "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
+              "autoscaling:EC2_INSTANCE_TERMINATE",
+              "autoscaling:EC2_INSTANCE_TERMINATE_ERROR"
+          ], "TopicARN" : { "Ref" : "NotificationTopic" } }
         ],
         "Tags": [
           { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "WebServer" ] ] }, "PropagateAtLaunch": "true" }
@@ -573,6 +795,66 @@
         "Port" : 80,
         "Protocol" : "HTTP"
       }
+    },
+    "SQLDatabase" : {
+      "Type" : "AWS::RDS::DBInstance",
+      "Properties" : {
+        "DBName" : { "Ref" : "DBName" },
+        "AllocatedStorage" : { "Ref" : "DBAllocatedStorage" },
+        "StorageType": "gp2",
+        "DBInstanceClass" : { "Ref" : "DBInstanceClass" },
+        "DBSubnetGroupName": { "Ref": "DBSubnetGroup" },
+        "Engine": "MySQL",
+        "EngineVersion" : "5.7",
+        "MasterUsername" : "master",
+        "MultiAZ": { "Fn::If" : [ "Is-DBMultiAZ", true, false ] },
+        "CopyTagsToSnapshot" : true,
+        "MasterUserPassword" : { "Ref" : "DBMasterPassword" },
+        "Tags" : [ { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "MoodleDB" ] ] } } ],
+        "VPCSecurityGroups": { "Fn::If" : [ "Is-EC2-VPC", [ { "Fn::GetAtt": [ "DBEC2SecurityGroup", "GroupId" ] } ], { "Ref" : "AWS::NoValue"}]},
+        "DBSecurityGroups": { "Fn::If" : [ "Is-EC2-Classic", [ { "Ref": "DBSecurityGroup" } ], { "Ref" : "AWS::NoValue"}]}
+      },
+      "DeletionPolicy" : "Snapshot"
+    },
+    "DBSubnetGroup": {
+      "Type" : "AWS::RDS::DBSubnetGroup",
+      "Properties" : {
+        "DBSubnetGroupDescription" : { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "DBSubnetGroup" ] ] },
+        "SubnetIds" : [ { "Ref": "Subnet1" }, { "Ref": "Subnet2" }, { "Ref": "Subnet3" } ]
+      }
+    },
+    "NotificationTopic" : {
+      "Type" : "AWS::SNS::Topic",
+      "Properties": {
+        "DisplayName": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "Notification Topic" ] ] }
+      }
+    },
+    "MySubscription" : {
+      "Type" : "AWS::SNS::Subscription",
+      "Properties" : {
+        "Endpoint" : { "Ref" : "MoodleAdminEmail" },
+        "Protocol" : "email",
+        "TopicArn" : {"Ref" : "NotificationTopic"}
+      }
+    },
+
+    "DBServerHighCPUAlarm" : {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmDescription" : { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "MoodleDB High CPU Alarm" ] ] },
+        "AlarmActions" : [ { "Ref" : "NotificationTopic" } ],
+        "MetricName" : "CPUUtilization",
+        "Namespace" : "AWS/RDS",
+        "Statistic" : "Average",
+        "Period" : "60",
+        "EvaluationPeriods" : "3",
+        "Threshold" : "70",
+        "ComparisonOperator" : "GreaterThanThreshold",
+        "Dimensions" : [ {
+          "Name" : "InstanceId",
+          "Value" : {"Ref" : "SQLDatabase"}
+        } ]
+      }
     }
   },
 
@@ -581,14 +863,12 @@
       "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "LoadBalancer", "DNSName" ]}, "/" ]]},
       "Description" : "Load Balancer URL"
     },
-    
     "VPC": {
       "Description": "VPC",
       "Value": {
         "Ref": "VPC"
       }
     },
-
     "Subnets": {
       "Description": "Subnets",
       "Value": {
@@ -602,14 +882,12 @@
         ]
       }
     },
-
     "BastionSecurityGroup": {
       "Description": "Bastion Security Group",
       "Value": {
         "Ref": "BastionSecurityGroup"
       }
     },
-
     "FileSystemID" : {
       "Description" : "File system ID",
       "Value" :  { "Ref" : "FileSystem" }
