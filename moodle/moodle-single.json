@@ -49,16 +49,6 @@
       "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
     },
 
-    "DBPassword" : {
-      "NoEcho": "true",
-      "Description" : "The Moodle database admin account password",
-      "Type": "String",
-      "MinLength": "8",
-      "MaxLength": "41",
-      "AllowedPattern" : "[a-zA-Z0-9]*",
-      "ConstraintDescription" : "must contain only alphanumeric characters."
-    },
-
     "DBRootPassword" : {
       "NoEcho": "true",
       "Description" : "MySQL root password",
@@ -113,7 +103,7 @@
       "t2.small"    : { "Arch" : "HVM64"  },
       "t2.medium"   : { "Arch" : "HVM64"  },
       "t2.large"    : { "Arch" : "HVM64"  },
-      "t2.xlarge"   : { "Arch" : "HVM64"  },
+      "t2.xlarge"   : { "Arch" : "HVM64"  }
     },
 
     "AWSInstanceType2NATArch" : {
@@ -199,9 +189,9 @@
           "install_moodle" : {
             "packages" : {
               "yum" : {
-                "httpd24-tools"         : [],
-                "httpd24"               : [],
+                "nginx"                 : [],
                 "php56"                 : [],
+                "php56-fpm"             : [],
                 "php56-cli"             : [],
                 "php56-gd"              : [],
                 "php56-intl"            : [],
@@ -216,7 +206,8 @@
                 "php56-mysqlnd"         : [],
                 "mysql"                 : [],
                 "mysql-server"          : [],
-                "mysql-libs"            : []
+                "mysql-libs"            : [],
+                "memcached"             : []
               }
             },
             "sources" : {
@@ -226,11 +217,60 @@
               "/tmp/setup.mysql" : {
                 "content" : { "Fn::Join" : ["", [
                   "CREATE DATABASE ", { "Ref" : "DBName" }, ";\n",
-                  "CREATE USER '", { "Ref" : "DBUser" }, "'@'localhost' IDENTIFIED BY '", { "Ref" : "DBPassword" }, "';\n",
+                  "CREATE USER '", { "Ref" : "DBUser" }, "'@'localhost' IDENTIFIED BY '", { "Ref" : "DBRootPassword" }, "';\n",
                   "GRANT ALL ON ", { "Ref" : "DBName" }, ".* TO '", { "Ref" : "DBUser" }, "'@'localhost';\n",
                   "FLUSH PRIVILEGES;\n"
                 ]]},
                 "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "/etc/nginx/nginx.conf" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "user nginx;\n",
+                  "worker_processes auto;\n",
+                  "error_log /var/log/nginx/error.log;\n",
+                  "pid /var/run/nginx.pid;\n\n",
+                  "events {\n",
+                  "    worker_connections 1024;\n",
+                  "}\n\n",
+                  "http {\n",
+                  "    log_format  main  '$remote_addr - $remote_user [$time_local] \"$request\" '\n",
+                  "                      '$status $body_bytes_sent \"$http_referer\" '\n",
+                  "                      '\"$http_user_agent\" \"$http_x_forwarded_for\"';\n\n",
+                  "    access_log  /var/log/nginx/access.log  main;\n\n",
+                  "    sendfile            on;\n",
+                  "    tcp_nopush          on;\n",
+                  "    tcp_nodelay         on;\n",
+                  "    keepalive_timeout   65;\n",
+                  "    types_hash_max_size 2048;\n",
+                  "    include             /etc/nginx/mime.types;\n",
+                  "    default_type        application/octet-stream;\n",
+                  "    include /etc/nginx/conf.d/*.conf;\n\n",
+                  "    index   index.php;\n\n",
+                  "    server {\n",
+                  "        listen       80 default_server;\n",
+                  "        listen       [::]:80 default_server;\n",
+                  "        server_name  localhost;\n",
+                  "        root         /var/www/html;\n\n",
+                  "        location / {\n",
+                  "        }\n\n",
+                  "        location ~ [^/]\\.php(/|$) {\n",
+                  "                fastcgi_split_path_info  ^(.+\\.php)(/.+)$;\n",
+                  "                fastcgi_index            index.php;\n",
+                  "                fastcgi_pass             127.0.0.1:9000;\n",
+                  "                include                  fastcgi_params;\n",
+                  "                fastcgi_param   PATH_INFO       $fastcgi_path_info;\n",
+                  "                fastcgi_param   SCRIPT_FILENAME $document_root$fastcgi_script_name;\n",
+                  "        }\n\n",
+                  "        location /dataroot/ {\n",
+                  "                internal;\n",
+                  "                alias /var/www/data/;\n",
+                  "        }\n",
+                  "    }\n",
+                  "}\n"
+                ]]},
+                "mode" : "000644",
                 "owner" : "root",
                 "group" : "root"
               },
@@ -245,15 +285,23 @@
                   "$CFG->dbhost    = 'localhost';\n",
                   "$CFG->dbname    = '",{ "Ref" : "DBName" }, "';\n",
                   "$CFG->dbuser    = '",{ "Ref" : "DBUser" }, "';\n",
-                  "$CFG->dbpass    = '",{ "Ref" : "DBPassword" }, "';\n",
+                  "$CFG->dbpass    = '",{ "Ref" : "DBRootPassword" }, "';\n",
                   "$CFG->prefix    = '';\n",
                   "$CFG->dboptions = array('dbpersist' => false,'dbsocket' => false,'dbport' => '','dbhandlesoptions' => false);\n",
                   "$CFG->wwwroot   = 'http://WWW_ROOT';\n",
                   "$CFG->dataroot  = '/var/www/data';\n",
+                  "$CFG->localcachedir = '/var/www/local';\n",
                   "$CFG->directorypermissions = 02777;\n",
-                  "$CFG->admin = 'admin';\n",
-                  "$CFG->cronclionly = false;\n",
-                  "\nrequire_once(__DIR__ . '/lib/setup.php');\n"
+                  "$CFG->admin = 'admin';\n\n",
+                  "$CFG->xsendfile = 'X-Accel-Redirect';\n",
+                  "$CFG->xsendfilealiases = array('/dataroot/' => $CFG->dataroot);\n\n",
+                  "$CFG->session_handler_class = '\\core\\session\\memcached';\n",
+                  "$CFG->session_memcached_save_path = '127.0.0.1:11211';\n",
+                  "$CFG->session_memcached_prefix = 'memc.sess.key.';\n",
+                  "$CFG->session_memcached_acquire_lock_timeout = 120;\n",
+                  "$CFG->session_memcached_lock_expire = 7200;\n",
+                  "$CFG->cachestore_memcached = '127.0.0.1:11211';\n\n",
+                  "require_once(__DIR__ . '/lib/setup.php');\n"
                 ]]},
                 "mode" : "000500",
                 "owner" : "root",
@@ -268,10 +316,35 @@
               }
             },
             "services" : {
-              "sysvinit" : {
-                "httpd"  : { "enabled" : "true", "ensureRunning" : "true" },
-                "mysqld" : { "enabled" : "true", "ensureRunning" : "true" },
-                "crond" : { "enabled" : "true", "ensureRunning" : "true" }
+              "sysvinit": {
+                "nginx"     : { "enabled" : "true", "ensureRunning" : "true" },
+                "php-fpm"   : { "enabled" : "true", "ensureRunning" : "true" },
+                "mysqld"    : { "enabled" : "true", "ensureRunning" : "true" },
+                "crond"     : { "enabled" : "true", "ensureRunning" : "true" },
+                "memcached" : { "enabled" : "true", "ensureRunning" : "true" }
+              }
+            },
+            "commands" : {
+              "01_configure_moodle" : {
+                "command" : { "Fn::Join" : [ ";", [
+                  "mv -fT /var/www/moodle /var/www/html",
+                  "sed -i \"s/WWW_ROOT/`curl -s http://169.254.169.254/latest/meta-data/public-hostname`/g\" /tmp/config.php",
+                  "mv /tmp/config.php /var/www/html",
+                  "chown -R root /var/www/html",
+                  "chmod -R 0755 /var/www/html"
+                ]]}
+              },
+              "02_create_data_dir" : {
+                "command": { "Fn::Join" : [ ";", [
+                  "mkdir /var/www/data",
+                  "chmod 0777 /var/www/data"
+                ]]}
+              },
+              "03_create_local_dir" : {
+                "command": { "Fn::Join" : [ ";", [
+                  "mkdir /var/www/local",
+                  "chmod 0777 /var/www/local"
+                ]]}
               }
             }
           },
@@ -285,32 +358,20 @@
                 "command" : { "Fn::Join" : ["", ["mysql -u root --password='", { "Ref" : "DBRootPassword" }, "' < /tmp/setup.mysql"]]},
                 "test" : { "Fn::Join" : ["", ["$(mysql ", { "Ref" : "DBName" }, " -u root --password='", { "Ref" : "DBRootPassword" }, "' >/dev/null 2>&1 </dev/null); (( $? != 0 ))"]]}
               },
-              "03_configure_moodle" : {
-                "command" : { "Fn::Join" : [ ";", [
-                    "mv -fT /var/www/moodle /var/www/html",
-                    "sed -i \"s/WWW_ROOT/`curl -s http://169.254.169.254/latest/meta-data/public-hostname`/g\" /tmp/config.php",
-                    "mv /tmp/config.php /var/www/html",
-                    "chown -R root /var/www/html",
-                    "chmod -R 0755 /var/www/html"
-                ]]}
-
-              },
-              "04_create_data_dir" : {
-                "command": { "Fn::Join" : [ ";", [
-                    "mkdir /var/www/data",
-                    "chmod 0777 /var/www/data"
-                ]]}
-              },
-              "05_install_database": {
+              "03_install_database": {
                 "cwd": "/var/www/html/admin/cli",
                 "command": { "Fn::Join" : ["", [
-                    "php install_database.php",
-                    " --lang=pt_BR",
-                    " --adminpass=",{ "Ref" : "MoodleAdminPassword" },
-                    " --adminemail=",{ "Ref" : "MoodleAdminEmail" },
-                    " --fullname=", { "Ref" : "MoodleSiteFullName" },
-                    " --shortname=",{ "Ref" : "MoodleSiteShortName" },
-                    " --agree-license"
+                  "if [ -f /var/www/data/.dbinstalled ]; ",
+                  "then echo \"skipping database creation\"; ",
+                  "else touch /var/www/data/.dbinstalled; ",
+                  "php install_database.php",
+                  " --lang=pt_BR",
+                  " --adminpass=\"",{ "Ref" : "MoodleAdminPassword" },"\"",
+                  " --adminemail=",{ "Ref" : "MoodleAdminEmail" },
+                  " --fullname=\"", { "Ref" : "MoodleSiteFullName" },"\"",
+                  " --shortname=\"",{ "Ref" : "MoodleSiteShortName" },"\"",
+                  " --agree-license;",
+                  " fi"
                 ]]}
               }
             }
@@ -337,13 +398,17 @@
           "         --stack ", { "Ref" : "AWS::StackName" },
           "         --resource WebServer ",
           "         --region ", { "Ref" : "AWS::Region" }, "\n"
-        ]]}}
+        ]]}},
+        "Tags": [
+          { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "WebServer" ] ] } }
+        ]
       },
       "CreationPolicy" : {
         "ResourceSignal" : {
           "Timeout" : "PT15M"
         }
       }
+
     }
   },
 
