@@ -4,13 +4,11 @@
   "Description" : "Moodle Single Server, with High CPU Alarm",
 
   "Parameters" : {
-
     "KeyName": {
       "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instances",
       "Type": "AWS::EC2::KeyPair::KeyName",
       "ConstraintDescription" : "must be the name of an existing EC2 KeyPair."
     },
-
     "InstanceType" : {
       "Description" : "WebServer EC2 instance type",
       "Type" : "String",
@@ -18,8 +16,11 @@
       "AllowedValues" : [ "t2.micro", "t2.small", "t2.medium", "t2.large", "t2.xlarge"],
       "ConstraintDescription" : "must be a valid EC2 instance type."
     },
-
-    "SSHLocation": {
+    "R53HostedZoneId": {
+      "Description": "Route53 Domain Name",
+      "Type": "AWS::Route53::HostedZone::Id"
+    },
+    "CorporateCidrIp": {
       "Description": "The IP address range that can be used to SSH to the EC2 instances",
       "Type": "String",
       "MinLength": "9",
@@ -28,7 +29,6 @@
       "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
       "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
     },
-
     "DBName" : {
       "Default": "moodledb",
       "Description" : "The Moodle database name",
@@ -38,7 +38,6 @@
       "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
       "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
     },
-
     "DBUser" : {
       "Default": "moodle",
       "Description" : "The Moodle database admin account username",
@@ -48,17 +47,6 @@
       "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
       "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
     },
-
-    "DBPassword" : {
-      "NoEcho": "true",
-      "Description" : "The Moodle database admin account password",
-      "Type": "String",
-      "MinLength": "8",
-      "MaxLength": "41",
-      "AllowedPattern" : "[a-zA-Z0-9]*",
-      "ConstraintDescription" : "must contain only alphanumeric characters."
-    },
-
     "DBRootPassword" : {
       "NoEcho": "true",
       "Description" : "MySQL root password",
@@ -68,7 +56,6 @@
       "AllowedPattern" : "[a-zA-Z0-9]*",
       "ConstraintDescription" : "must contain only alphanumeric characters."
     },
-
     "MoodleAdminPassword" : {
       "NoEcho": "true",
       "Description" : "Moodle Admin Password",
@@ -78,7 +65,6 @@
       "AllowedPattern" : "[a-zA-Z0-9]*",
       "ConstraintDescription" : "must contain only alphanumeric characters."
     },
-
     "MoodleAdminEmail" : {
       "Description" : "Moodle Admin Email",
       "Type": "String",
@@ -87,7 +73,6 @@
       "AllowedPattern" : "[a-zA-Z0-9@\\.]*",
       "ConstraintDescription" : "must contain only alphanumeric characters."
     },
-
     "MoodleSiteFullName" : {
       "Description" : "Moodle Site Full Name",
       "Type": "String",
@@ -96,7 +81,6 @@
       "AllowedPattern" : "[a-zA-Z0-9 \\-]*",
       "ConstraintDescription" : "must contain only alphanumeric characters."
     },
-
     "MoodleSiteShortName" : {
       "Description" : "Moodle Site Short Name",
       "Type": "String",
@@ -107,13 +91,53 @@
     }
   },
 
+  "Metadata" : {
+    "AWS::CloudFormation::Interface" : {
+      "ParameterGroups" : [
+        {
+          "Label" : { "default" : "Moodle Configuration" },
+          "Parameters" : [ "MoodleAdminEmail", "MoodleAdminPassword", "MoodleSiteFullName", "MoodleSiteShortName" ]
+        },
+        {
+          "Label" : { "default" : "Network Configuration" },
+          "Parameters" : [ "R53HostedZoneId", "CorporateCidrIp"]
+        },
+        {
+          "Label" : { "default" : "Web Server Configuration" },
+          "Parameters" : [ "InstanceType", "KeyName" ]
+        },
+        {
+          "Label" : { "default":"Database Configuration" },
+          "Parameters" : [ "DBName", "DBUser", "DBRootPassword" ]
+        }
+      ],
+      "ParameterLabels" : {
+        "MoodleAdminEmail": { "default" : "Admin Email" },
+        "MoodleAdminPassword": { "default" : "Admin Password" },
+        "MoodleSiteFullName": { "default" : "Site Full Name" },
+        "MoodleSiteShortName": { "default" : "Site Short Name" },
+
+        "R53HostedZoneId": { "default" : "Domain Name" },
+        "CorporateCidrIp": { "default" : "Admin IP Address" },
+
+        "InstanceType": { "default" : "Instance Type" },
+        "KeyName": { "default" : "SSH Key Name" },
+
+        "DBInstanceClass": { "default" : "Maximum Nodes" },
+        "DBName": { "default" : "Name" },
+        "DBUser": { "default" : "User" },
+        "DBRootPassword": { "default" : "Password" }
+      }
+    }
+  },
+
   "Mappings" : {
     "AWSInstanceType2Arch" : {
       "t2.micro"    : { "Arch" : "HVM64"  },
       "t2.small"    : { "Arch" : "HVM64"  },
       "t2.medium"   : { "Arch" : "HVM64"  },
       "t2.large"    : { "Arch" : "HVM64"  },
-      "t2.xlarge"   : { "Arch" : "HVM64"  },
+      "t2.xlarge"   : { "Arch" : "HVM64"  }
     },
 
     "AWSInstanceType2NATArch" : {
@@ -148,11 +172,10 @@
         "GroupDescription" : "Enable HTTP access via port 80 locked down to the load balancer + SSH access",
         "SecurityGroupIngress" : [
           {"IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0"},
-          {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Ref" : "SSHLocation"}}
+          {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Ref" : "CorporateCidrIp"}}
         ]
       }
     },
-
     "WebServer": {
       "Type" : "AWS::EC2::Instance",
       "Metadata" : {
@@ -199,9 +222,9 @@
           "install_moodle" : {
             "packages" : {
               "yum" : {
-                "httpd24-tools"         : [],
-                "httpd24"               : [],
+                "nginx"                 : [],
                 "php56"                 : [],
+                "php56-fpm"             : [],
                 "php56-cli"             : [],
                 "php56-gd"              : [],
                 "php56-intl"            : [],
@@ -216,7 +239,8 @@
                 "php56-mysqlnd"         : [],
                 "mysql"                 : [],
                 "mysql-server"          : [],
-                "mysql-libs"            : []
+                "mysql-libs"            : [],
+                "memcached"             : []
               }
             },
             "sources" : {
@@ -226,11 +250,60 @@
               "/tmp/setup.mysql" : {
                 "content" : { "Fn::Join" : ["", [
                   "CREATE DATABASE ", { "Ref" : "DBName" }, ";\n",
-                  "CREATE USER '", { "Ref" : "DBUser" }, "'@'localhost' IDENTIFIED BY '", { "Ref" : "DBPassword" }, "';\n",
+                  "CREATE USER '", { "Ref" : "DBUser" }, "'@'localhost' IDENTIFIED BY '", { "Ref" : "DBRootPassword" }, "';\n",
                   "GRANT ALL ON ", { "Ref" : "DBName" }, ".* TO '", { "Ref" : "DBUser" }, "'@'localhost';\n",
                   "FLUSH PRIVILEGES;\n"
                 ]]},
                 "mode"  : "000400",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "/etc/nginx/nginx.conf" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "user nginx;\n",
+                  "worker_processes auto;\n",
+                  "error_log /var/log/nginx/error.log;\n",
+                  "pid /var/run/nginx.pid;\n\n",
+                  "events {\n",
+                  "    worker_connections 1024;\n",
+                  "}\n\n",
+                  "http {\n",
+                  "    log_format  main  '$remote_addr - $remote_user [$time_local] \"$request\" '\n",
+                  "                      '$status $body_bytes_sent \"$http_referer\" '\n",
+                  "                      '\"$http_user_agent\" \"$http_x_forwarded_for\"';\n\n",
+                  "    access_log  /var/log/nginx/access.log  main;\n\n",
+                  "    sendfile            on;\n",
+                  "    tcp_nopush          on;\n",
+                  "    tcp_nodelay         on;\n",
+                  "    keepalive_timeout   65;\n",
+                  "    types_hash_max_size 2048;\n",
+                  "    include             /etc/nginx/mime.types;\n",
+                  "    default_type        application/octet-stream;\n",
+                  "    include /etc/nginx/conf.d/*.conf;\n\n",
+                  "    index   index.php;\n\n",
+                  "    server {\n",
+                  "        listen       80 default_server;\n",
+                  "        listen       [::]:80 default_server;\n",
+                  "        server_name  localhost;\n",
+                  "        root         /var/www/html;\n\n",
+                  "        location / {\n",
+                  "        }\n\n",
+                  "        location ~ [^/]\\.php(/|$) {\n",
+                  "                fastcgi_split_path_info  ^(.+\\.php)(/.+)$;\n",
+                  "                fastcgi_index            index.php;\n",
+                  "                fastcgi_pass             127.0.0.1:9000;\n",
+                  "                include                  fastcgi_params;\n",
+                  "                fastcgi_param   PATH_INFO       $fastcgi_path_info;\n",
+                  "                fastcgi_param   SCRIPT_FILENAME $document_root$fastcgi_script_name;\n",
+                  "        }\n\n",
+                  "        location /dataroot/ {\n",
+                  "                internal;\n",
+                  "                alias /var/www/data/;\n",
+                  "        }\n",
+                  "    }\n",
+                  "}\n"
+                ]]},
+                "mode" : "000644",
                 "owner" : "root",
                 "group" : "root"
               },
@@ -245,16 +318,25 @@
                   "$CFG->dbhost    = 'localhost';\n",
                   "$CFG->dbname    = '",{ "Ref" : "DBName" }, "';\n",
                   "$CFG->dbuser    = '",{ "Ref" : "DBUser" }, "';\n",
-                  "$CFG->dbpass    = '",{ "Ref" : "DBPassword" }, "';\n",
+                  "$CFG->dbpass    = '",{ "Ref" : "DBRootPassword" }, "';\n",
                   "$CFG->prefix    = '';\n",
                   "$CFG->dboptions = array('dbpersist' => false,'dbsocket' => false,'dbport' => '','dbhandlesoptions' => false);\n",
                   "$CFG->wwwroot   = 'http://WWW_ROOT';\n",
                   "$CFG->dataroot  = '/var/www/data';\n",
+                  "$CFG->localcachedir = '/var/www/local';\n",
                   "$CFG->directorypermissions = 02777;\n",
-                  "$CFG->admin = 'admin';\n",
-                  "\nrequire_once(__DIR__ . '/lib/setup.php');\n"
+                  "$CFG->admin = 'admin';\n\n",
+                  "$CFG->xsendfile = 'X-Accel-Redirect';\n",
+                  "$CFG->xsendfilealiases = array('/dataroot/' => $CFG->dataroot);\n\n",
+                  "$CFG->session_handler_class = '\\core\\session\\memcached';\n",
+                  "$CFG->session_memcached_save_path = '127.0.0.1:11211';\n",
+                  "$CFG->session_memcached_prefix = 'memc.sess.key.';\n",
+                  "$CFG->session_memcached_acquire_lock_timeout = 120;\n",
+                  "$CFG->session_memcached_lock_expire = 7200;\n",
+                  "$CFG->cachestore_memcached = '127.0.0.1:11211';\n\n",
+                  "require_once(__DIR__ . '/lib/setup.php');\n"
                 ]]},
-                "mode" : "000700",
+                "mode" : "000500",
                 "owner" : "root",
                 "group" : "root"
               },
@@ -267,10 +349,35 @@
               }
             },
             "services" : {
-              "sysvinit" : {
-                "httpd"  : { "enabled" : "true", "ensureRunning" : "true" },
-                "mysqld" : { "enabled" : "true", "ensureRunning" : "true" },
-                "crond" : { "enabled" : "true", "ensureRunning" : "true" }
+              "sysvinit": {
+                "nginx"     : { "enabled" : "true", "ensureRunning" : "true" },
+                "php-fpm"   : { "enabled" : "true", "ensureRunning" : "true" },
+                "mysqld"    : { "enabled" : "true", "ensureRunning" : "true" },
+                "crond"     : { "enabled" : "true", "ensureRunning" : "true" },
+                "memcached" : { "enabled" : "true", "ensureRunning" : "true" }
+              }
+            },
+            "commands" : {
+              "01_configure_moodle" : {
+                "command" : { "Fn::Join" : [ ";", [
+                    "mv -fT /var/www/moodle /var/www/html",
+                    "sed -i \"s/WWW_ROOT/`curl -s http://169.254.169.254/latest/meta-data/public-hostname`/g\" /tmp/config.php",
+                    "mv /tmp/config.php /var/www/html",
+                    "chown -R root /var/www/html",
+                    "chmod -R 0755 /var/www/html"
+                ]]}
+              },
+              "02_create_data_dir" : {
+                "command": { "Fn::Join" : [ ";", [
+                    "mkdir /var/www/data",
+                    "chmod 0777 /var/www/data"
+                ]]}
+              },
+              "03_create_local_dir" : {
+                "command": { "Fn::Join" : [ ";", [
+                  "mkdir /var/www/local",
+                  "chmod 0777 /var/www/local"
+                ]]}
               }
             }
           },
@@ -284,32 +391,20 @@
                 "command" : { "Fn::Join" : ["", ["mysql -u root --password='", { "Ref" : "DBRootPassword" }, "' < /tmp/setup.mysql"]]},
                 "test" : { "Fn::Join" : ["", ["$(mysql ", { "Ref" : "DBName" }, " -u root --password='", { "Ref" : "DBRootPassword" }, "' >/dev/null 2>&1 </dev/null); (( $? != 0 ))"]]}
               },
-              "03_configure_moodle" : {
-                "command" : { "Fn::Join" : [ ";", [
-                    "mv -fT /var/www/moodle /var/www/html",
-                    "sed -i \"s/WWW_ROOT/`curl -s http://169.254.169.254/latest/meta-data/public-hostname`/g\" /tmp/config.php",
-                    "mv /tmp/config.php /var/www/html",
-                    "chown -R root /var/www/html",
-                    "chmod -R 0755 /var/www/html"
-                ]]}
-
-              },
-              "04_create_data_dir" : {
-                "command": { "Fn::Join" : [ ";", [
-                    "mkdir /var/www/data",
-                    "chmod 0777 /var/www/data"
-                ]]}
-              },
-              "05_install_database": {
+              "03_install_database": {
                 "cwd": "/var/www/html/admin/cli",
                 "command": { "Fn::Join" : ["", [
-                    "php install_database.php",
-                    " --lang=pt_BR",
-                    " --adminpass=",{ "Ref" : "MoodleAdminPassword" },
-                    " --adminemail=",{ "Ref" : "MoodleAdminEmail" },
-                    " --fullname=", { "Ref" : "MoodleSiteFullName" },
-                    " --shortname=",{ "Ref" : "MoodleSiteShortName" },
-                    " --agree-license"
+                  "if [ -f /var/www/data/.dbinstalled ]; ",
+                  "then echo \"skipping database creation\"; ",
+                  "else touch /var/www/data/.dbinstalled; ",
+                  "php install_database.php",
+                  " --lang=pt_BR",
+                  " --adminpass=\"",{ "Ref" : "MoodleAdminPassword" },"\"",
+                  " --adminemail=",{ "Ref" : "MoodleAdminEmail" },
+                  " --fullname=\"", { "Ref" : "MoodleSiteFullName" },"\"",
+                  " --shortname=\"",{ "Ref" : "MoodleSiteShortName" },"\"",
+                  " --agree-license;",
+                  " fi"
                 ]]}
               }
             }
@@ -322,7 +417,6 @@
         "InstanceType"   : { "Ref" : "InstanceType" },
         "SecurityGroups" : [ {"Ref" : "WebServerSecurityGroup"} ],
         "KeyName"        : { "Ref" : "KeyName" },
-        "Tags": [ { "Key":"Name", "Value":"Moodle Web Server" }],
         "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
           "#!/bin/bash -xe\n",
           "yum update -y aws-cfn-bootstrap\n",
@@ -337,7 +431,10 @@
           "         --stack ", { "Ref" : "AWS::StackName" },
           "         --resource WebServer ",
           "         --region ", { "Ref" : "AWS::Region" }, "\n"
-        ]]}}
+        ]]}},
+        "Tags": [
+          { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "WebServer" ] ] } }
+        ]
       },
       "CreationPolicy" : {
         "ResourceSignal" : {
@@ -346,8 +443,11 @@
       }
     },
 
-    "SNSAlarmTopic" : {
-      "Type" : "AWS::SNS::Topic"
+    "NotificationTopic" : {
+      "Type" : "AWS::SNS::Topic",
+      "Properties": {
+        "DisplayName": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "Notification" ] ] }
+      }
     },
 
     "MySubscription" : {
@@ -355,15 +455,15 @@
       "Properties" : {
         "Endpoint" : { "Ref" : "MoodleAdminEmail" },
         "Protocol" : "email",
-        "TopicArn" : {"Ref" : "SNSAlarmTopic"}
+        "TopicArn" : {"Ref" : "NotificationTopic"}
       }
     },
 
     "WebHighServerAlarm" : {
       "Type" : "AWS::CloudWatch::Alarm",
       "Properties" : {
-        "AlarmDescription" : "WebServer High CPU alarm",
-        "AlarmActions" : [ { "Ref" : "SNSAlarmTopic" } ],
+        "AlarmDescription" : { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "WebServer High CPU Alarm" ] ] },
+        "AlarmActions" : [ { "Ref" : "NotificationTopic" } ],
         "MetricName" : "CPUUtilization",
         "Namespace" : "AWS/EC2",
         "Statistic" : "Average",
