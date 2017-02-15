@@ -16,7 +16,16 @@
       "AllowedValues" : [ "t2.micro", "t2.small", "t2.medium", "t2.large", "t2.xlarge"],
       "ConstraintDescription" : "must be a valid EC2 instance type."
     },
-    "R53HostedZoneId": {
+    "HostName" : {
+      "Description" : "Host Name",
+      "Type" : "String",
+      "Default" : "moodle",
+      "AllowedPattern" : "[a-z][a-zA-Z0-9\\-\\.]*",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "ConstraintDescription" : "must be a valid host name."
+    },
+    "HostedZoneName": {
       "Description": "Route53 Domain Name",
       "Type": "AWS::Route53::HostedZone::Id"
     },
@@ -100,7 +109,7 @@
         },
         {
           "Label" : { "default" : "Network Configuration" },
-          "Parameters" : [ "R53HostedZoneId", "CorporateCidrIp"]
+          "Parameters" : [ "HostedZoneName", "HostName", "CorporateCidrIp"]
         },
         {
           "Label" : { "default" : "Web Server Configuration" },
@@ -116,8 +125,8 @@
         "MoodleAdminPassword": { "default" : "Admin Password" },
         "MoodleSiteFullName": { "default" : "Site Full Name" },
         "MoodleSiteShortName": { "default" : "Site Short Name" },
-
-        "R53HostedZoneId": { "default" : "Domain Name" },
+        "HostName": { "default" : "Host Name" },
+        "HostedZoneName": { "default" : "Hosted Zone Name" },
         "CorporateCidrIp": { "default" : "Admin IP Address" },
 
         "InstanceType": { "default" : "Instance Type" },
@@ -440,6 +449,20 @@
         "ResourceSignal" : {
           "Timeout" : "PT15M"
         }
+      }
+    },
+
+    "DNSRecord" : {
+      "Type" : "AWS::Route53::RecordSet",
+      "Properties" : {
+        "HostedZoneId" : { "Ref" : "HostedZoneName" },
+        "Comment" : "Moodle DNS",
+        "Name" : { "Ref" : "HostName"},
+        "Type" : "A",
+        "TTL" : "300",
+        "ResourceRecords" : [
+          { "Fn::GetAtt" : [ "WebServer", "PublicIp" ] }
+        ]
       }
     },
 

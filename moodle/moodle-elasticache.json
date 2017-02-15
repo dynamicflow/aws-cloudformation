@@ -1,0 +1,71 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "ElastiCache Cluster",
+
+  "Parameters": {
+    "CacheNodeType" : {
+      "Description" : "Cache Node Type",
+      "Type" : "String",
+      "Default" : "cache.t2.small",
+      "AllowedValues" : [ "cache.t2.micro","cache.t2.small","cache.t2.medium","cache.m3.medium","cache.m3.large","cache.m3.xlarge","cache.m3.2xlarge","cache.m4.large","cache.m4.xlarge","cache.m4.2xlarge","cache.m4.4xlarge","cache.m4.10xlarge"],
+      "ConstraintDescription" : "must be a valid Cache node type."
+    },
+    "CacheMultiAZ" : {
+      "Type": "String",
+      "Description": "Deploy in multiple Availability Zones",
+      "AllowedValues": [ "cross-az", "single-az" ],
+      "Default": "single-az"
+    },
+    "CacheNumNodes": {
+      "Type": "Number",
+      "Description": "Maximum size and initial desired capacity of Auto Scaling Group",
+      "Default": "1"
+    }
+  },
+
+  "Conditions" : {
+
+  },
+
+  "Resources" : {
+    "ElasticacheSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Elasticache Security Group",
+        "SecurityGroupIngress": [ {
+          "IpProtocol": "tcp",
+          "FromPort": "11211",
+          "ToPort": "11211",
+          "SourceSecurityGroupName": { "Ref": "WebServerSecurityGroup" }
+        } ]
+      }
+    },
+    "ElasticacheSubnetGroup" : {
+      "Type" : "AWS::ElastiCache::SubnetGroup",
+      "Properties" : {
+        "Description" : "Cache Subnet Group",
+        "SubnetIds" : [ { "Ref" : "Subnet1" }, { "Ref" : "Subnet2" }, { "Ref" : "Subnet3" } ]
+      }
+    },
+    "ElasticacheCluster": {
+      "Type": "AWS::ElastiCache::CacheCluster",
+      "Properties": {
+        "AutoMinorVersionUpgrade": "true",
+        "Engine": "memcached",
+        "CacheNodeType": {"Ref": "CacheNodeType"},
+        "NumCacheNodes": {"Ref": "CacheNumNodes"},
+        "AZMode" : {"Ref": "CacheMultiAZ"},
+        "CacheSubnetGroupName": { "Ref" : "ElasticacheSubnetGroup" },
+        "VpcSecurityGroupIds": [{"Fn::GetAtt": [ "ElasticacheSecurityGroup", "GroupId"]}]
+      }
+    }
+  },
+
+  "Outputs" : {
+    "ElasticacheCluster" : {
+      "Description" : "Platform in which this stack is deployed",
+      "Value" : {"Fn::GetAtt": [ "ElasticacheCluster", "ConfigurationEndpoint.Address"]}
+    }
+  }
+}

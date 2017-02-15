@@ -29,7 +29,7 @@
     },
     "DBName" : {
       "Default": "moodledb",
-      "Description" : "Database name",
+      "Description" : "The Moodle database name",
       "Type": "String",
       "MinLength": "1",
       "MaxLength": "64",
@@ -38,7 +38,7 @@
     },
     "DBMasterPassword" : {
       "NoEcho": "true",
-      "Description" : "Master Password",
+      "Description" : "MySQL master password",
       "Type": "String",
       "MinLength": "8",
       "MaxLength": "41",
@@ -98,6 +98,24 @@
       "MaxLength": "20",
       "AllowedPattern" : "[a-zA-Z0-9 \\-]*",
       "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+    "CacheNodeType" : {
+      "Description" : "Cache Node Type",
+      "Type" : "String",
+      "Default" : "cache.t2.small",
+      "AllowedValues" : [ "cache.t2.micro","cache.t2.small","cache.t2.medium","cache.m3.medium","cache.m3.large","cache.m3.xlarge","cache.m3.2xlarge","cache.m4.large","cache.m4.xlarge","cache.m4.2xlarge","cache.m4.4xlarge","cache.m4.10xlarge"],
+      "ConstraintDescription" : "must be a valid Cache node type."
+    },
+    "CacheMultiAZ" : {
+      "Type": "String",
+      "Description": "Deploy in multiple Availability Zones",
+      "AllowedValues": [ "yes", "no" ],
+      "Default": "no"
+    },
+    "CacheNumNodes": {
+      "Type": "Number",
+      "Description": "Cache cluster size",
+      "Default": "1"
     }
   },
 
@@ -117,6 +135,10 @@
           "Parameters" : [ "InstanceType", "KeyName", "AsgMaxSize" ]
         },
         {
+          "Label" : { "default" : "Cache Configuration" },
+          "Parameters" : [ "CacheNodeType", "CacheNumNodes", "CacheMultiAZ" ]
+        },
+        {
           "Label" : { "default":"Database Configuration" },
           "Parameters" : [ "DBInstanceClass", "DBName", "DBMasterPassword", "DBAllocatedStorage", "DBMultiAZ" ]
         }
@@ -134,11 +156,16 @@
         "KeyName": { "default" : "SSH Key Name" },
         "AsgMaxSize" : { "default" : "Maximum Nodes"},
 
-        "DBInstanceClass": { "default" : "Maximum Nodes" },
+        "DBInstanceClass": { "default" : "Instance Type" },
         "DBName": { "default" : "Name" },
         "DBMasterPassword": { "default" : "Password" },
         "DBAllocatedStorage": { "default" : "Capacity" },
-        "DBMultiAZ": { "default" : "High Availability" }
+        "DBMultiAZ": { "default" : "High Availability" },
+
+        "CacheNodeType": { "default" : "Instance Type" },
+        "CacheNumNodes": { "default" : "Quantity" },
+        "CacheMultiAZ": { "default" : "High Availability" }
+
       }
     }
   },
@@ -171,6 +198,10 @@
       "ap-southeast-2"   : {"PV64" : "ami-8f94b9ec", "HVM64" : "ami-d9d7f9ba", "HVMG2" : "ami-543d1137"},
       "sa-east-1"        : {"PV64" : "ami-e188018d", "HVM64" : "ami-106ee57c", "HVMG2" : "NOT_SUPPORTED"},
       "cn-north-1"       : {"PV64" : "ami-77a46e1a", "HVM64" : "ami-05a66c68", "HVMG2" : "NOT_SUPPORTED"}
+    },
+    "CacheMultiAZMap" : {
+      "yes": { "AZMode": "cross-az" },
+      "no" : { "AZMode": "single-az" }
     }
   },
 
@@ -386,13 +417,27 @@
         ]
       }
     },
+    "LoadBalancerSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "VpcId": { "Ref": "VPC" },
+        "GroupDescription" : "Enable HTTP from internet",
+        "SecurityGroupIngress" : [
+          { "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "CidrIp": "0.0.0.0/0"},
+          { "IpProtocol": "tcp", "FromPort": "443", "ToPort": "443", "CidrIp": "0.0.0.0/0"}
+        ],
+        "Tags": [
+          { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "LoadBalancer" ] ] } }
+        ]
+      }
+    },
     "WebServerSecurityGroup" : {
       "Type" : "AWS::EC2::SecurityGroup",
       "Properties" : {
         "VpcId": { "Ref": "VPC" },
         "GroupDescription" : "Enable HTTP access via port 80 locked down to the load balancer",
         "SecurityGroupIngress" : [
-          { "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "CidrIp": "0.0.0.0/0"},
+          { "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "SourceSecurityGroupId" : { "Fn::GetAtt": ["LoadBalancerSecurityGroup","GroupId"] } },
           { "IpProtocol": "tcp", "FromPort": "22", "ToPort": "22", "CidrIp": { "Ref": "CorporateCidrIp" } }
         ],
         "Tags": [
@@ -411,6 +456,18 @@
         ],
         "Tags": [
           { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "MountTarget" ] ] } }
+        ]
+      }
+    },
+    "ElasticacheSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "GroupDescription": "Elasticache Security Group",
+        "SecurityGroupIngress": [
+          { "IpProtocol": "tcp", "FromPort": "11211", "ToPort": "11211", "SourceSecurityGroupId" : { "Fn::GetAtt": ["WebServerSecurityGroup","GroupId"] } } ],
+        "Tags": [
+          { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "ElastiCache" ] ] } }
         ]
       }
     },
@@ -485,8 +542,7 @@
             "packages" : {
               "yum" : {
                 "nfs-utils"     : [],
-                "httpd24-tools" : [],
-                "httpd24"       : []
+                "nginx"     : []
               }
             },
             "files" : {
@@ -567,17 +623,14 @@
               "01_createdir" : {
                 "command" : "mkdir -p /var/www/data"
               },
-              "02_chmoddir" : {
-                "command" : "chmod 0770 /var/www/data"
-              },
-              "03_fstab" : {
+              "02_fstab" : {
                 "command": { "Fn::Sub":"echo \"${FileSystem}.efs.${AWS::Region}.amazonaws.com:/ /var/www/data nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 0 0\" >> /etc/fstab" }
               },
-              "04_mount" : {
+              "03_mount" : {
                 "command" : "mount /var/www/data"
               },
-              "05_chown" : {
-                "command" : "chown apache:apache /var/www/data"
+              "04_chmoddir" : {
+                "command" : "chmod 0777 /var/www/data"
               }
             },
             "services" : {
@@ -590,6 +643,7 @@
             "packages" : {
               "yum" : {
                 "php56"                 : [],
+                "php56-fpm"             : [],
                 "php56-cli"             : [],
                 "php56-gd"              : [],
                 "php56-intl"            : [],
@@ -608,6 +662,55 @@
               "/var/www" : "https://download.moodle.org/download.php/direct/stable32/moodle-3.2.1.tgz"
             },
             "files" : {
+              "/etc/nginx/nginx.conf" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "user nginx;\n",
+                  "worker_processes auto;\n",
+                  "error_log /var/log/nginx/error.log;\n",
+                  "pid /var/run/nginx.pid;\n\n",
+                  "events {\n",
+                  "    worker_connections 1024;\n",
+                  "}\n\n",
+                  "http {\n",
+                  "    log_format  main  '$remote_addr - $remote_user [$time_local] \"$request\" '\n",
+                  "                      '$status $body_bytes_sent \"$http_referer\" '\n",
+                  "                      '\"$http_user_agent\" \"$http_x_forwarded_for\"';\n\n",
+                  "    access_log  /var/log/nginx/access.log  main;\n\n",
+                  "    sendfile            on;\n",
+                  "    tcp_nopush          on;\n",
+                  "    tcp_nodelay         on;\n",
+                  "    keepalive_timeout   65;\n",
+                  "    types_hash_max_size 2048;\n",
+                  "    include             /etc/nginx/mime.types;\n",
+                  "    default_type        application/octet-stream;\n",
+                  "    include /etc/nginx/conf.d/*.conf;\n\n",
+                  "    index   index.php;\n\n",
+                  "    server {\n",
+                  "        listen       80 default_server;\n",
+                  "        listen       [::]:80 default_server;\n",
+                  "        server_name  localhost;\n",
+                  "        root         /var/www/html;\n\n",
+                  "        location / {\n",
+                  "        }\n\n",
+                  "        location ~ [^/]\\.php(/|$) {\n",
+                  "                fastcgi_split_path_info  ^(.+\\.php)(/.+)$;\n",
+                  "                fastcgi_index            index.php;\n",
+                  "                fastcgi_pass             127.0.0.1:9000;\n",
+                  "                include                  fastcgi_params;\n",
+                  "                fastcgi_param   PATH_INFO       $fastcgi_path_info;\n",
+                  "                fastcgi_param   SCRIPT_FILENAME $document_root$fastcgi_script_name;\n",
+                  "        }\n\n",
+                  "        location /dataroot/ {\n",
+                  "                internal;\n",
+                  "                alias /var/www/data/;\n",
+                  "        }\n",
+                  "    }\n",
+                  "}\n"
+                ]]},
+                "mode" : "000644",
+                "owner" : "root",
+                "group" : "root"
+              },
               "/tmp/config.php" : {
                 "content" : { "Fn::Join" : [ "", [
                   "<?php\n",
@@ -624,9 +727,18 @@
                   "$CFG->dboptions = array('dbpersist' => false,'dbsocket' => false,'dbport' => '','dbhandlesoptions' => false);\n",
                   "$CFG->wwwroot   = 'http://LB_NAME';\n",
                   "$CFG->dataroot  = '/var/www/data';\n",
+                  "$CFG->localcachedir = '/var/www/local';\n",
                   "$CFG->directorypermissions = 02777;\n",
-                  "$CFG->admin = 'admin';\n",
-                  "\nrequire_once(__DIR__ . '/lib/setup.php');\n"
+                  "$CFG->admin = 'admin';\n\n",
+                  "$CFG->xsendfile = 'X-Accel-Redirect';\n",
+                  "$CFG->xsendfilealiases = array('/dataroot/' => $CFG->dataroot);\n\n",
+                  "$CFG->session_handler_class = '\\core\\session\\memcached';\n",
+                  "$CFG->session_memcached_save_path = '", { "Fn::GetAtt": [ "ElasticacheCluster", "ConfigurationEndpoint.Address" ] },":11211';\n",
+                  "$CFG->session_memcached_prefix = 'memc.sess.key.';\n",
+                  "$CFG->session_memcached_acquire_lock_timeout = 120;\n",
+                  "$CFG->session_memcached_lock_expire = 7200;\n",
+                  "$CFG->cachestore_memcached = '", { "Fn::GetAtt": [ "ElasticacheCluster", "ConfigurationEndpoint.Address" ] },":11211';\n\n",
+                  "require_once(__DIR__ . '/lib/setup.php');\n"
                 ]]},
                 "mode" : "000500",
                 "owner" : "root",
@@ -641,9 +753,19 @@
               }
             },
             "services" : {
-              "sysvinit" : {
-                "httpd"  : { "enabled" : "true", "ensureRunning" : "true" },
-                "crond" : { "enabled" : "true", "ensureRunning" : "true" }
+              "sysvinit": {
+                "nginx": {
+                  "enabled": "true",
+                  "ensureRunning": "true"
+                },
+                "php-fpm": {
+                  "enabled": "true",
+                  "ensureRunning": "true"
+                },
+                "crond": {
+                  "enabled": "true",
+                  "ensureRunning": "true"
+                }
               }
             }
           },
@@ -662,9 +784,14 @@
                   "chown -R root /var/www/html",
                   "chmod -R 0755 /var/www/html"
                 ]]}
-
               },
-              "02_install_database": {
+              "02_create_local_dir" : {
+                "command": { "Fn::Join" : [ ";", [
+                  "mkdir /var/www/local",
+                  "chmod 0777 /var/www/local"
+                ]]}
+              },
+              "03_install_database": {
                 "cwd": "/var/www/html/admin/cli",
                 "command": { "Fn::Join" : ["", [
                   "if [ -f /var/www/data/.dbinstalled ]; ",
@@ -753,7 +880,7 @@
         "LoadBalancerAttributes" : [],
         "Name" : { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" },"LoadBalancer" ] ] },
         "Scheme" : "internet-facing",
-        "SecurityGroups" : [ { "Ref": "WebServerSecurityGroup" } ],
+        "SecurityGroups" : [ { "Ref": "LoadBalancerSecurityGroup" } ],
         "Subnets" : [{ "Ref": "Subnet1" }, { "Ref": "Subnet2" }, { "Ref": "Subnet3" }],
         "Tags" : []
       }
@@ -796,6 +923,27 @@
         "Protocol" : "HTTP"
       }
     },
+    "ElasticacheSubnetGroup" : {
+      "Type" : "AWS::ElastiCache::SubnetGroup",
+      "Properties" : {
+        "Description" : "Cache Subnet Group",
+        "SubnetIds" : [ { "Ref" : "Subnet1" }, { "Ref" : "Subnet2" }, { "Ref" : "Subnet3" } ]
+      }
+    },
+    "ElasticacheCluster": {
+      "Type": "AWS::ElastiCache::CacheCluster",
+      "Properties": {
+        "AutoMinorVersionUpgrade": "true",
+        "Engine": "memcached",
+        "CacheNodeType": {"Ref": "CacheNodeType"},
+        "NumCacheNodes": {"Ref": "CacheNumNodes"},
+        "AZMode" : { "Fn::FindInMap": [ "CacheMultiAZMap", { "Ref": "CacheMultiAZ" }, "AZMode" ] },
+        "CacheSubnetGroupName": { "Ref" : "ElasticacheSubnetGroup" },
+        "VpcSecurityGroupIds": [{"Fn::GetAtt": [ "ElasticacheSecurityGroup", "GroupId"]}],
+        "NotificationTopicArn": { "Ref" : "NotificationTopic" },
+        "Tags" : [ { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "MoodleDB" ] ] } } ],
+      }
+    },
     "SQLDatabase" : {
       "Type" : "AWS::RDS::DBInstance",
       "Properties" : {
@@ -826,7 +974,7 @@
     "NotificationTopic" : {
       "Type" : "AWS::SNS::Topic",
       "Properties": {
-        "DisplayName": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "Notification Topic" ] ] }
+        "DisplayName": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "Notification" ] ] }
       }
     },
     "MySubscription" : {
