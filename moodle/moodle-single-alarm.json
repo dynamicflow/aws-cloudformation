@@ -1,7 +1,7 @@
 {
   "AWSTemplateFormatVersion" : "2010-09-09",
 
-  "Description" : "Moodle Single Server, with High CPU Alarm",
+  "Description" : "Moodle Single Server",
 
   "Parameters" : {
     "KeyName": {
@@ -17,13 +17,13 @@
       "ConstraintDescription" : "must be a valid EC2 instance type."
     },
     "HostName" : {
-      "Description" : "Host Name, leave empty to use default",
+      "Description" : "Host Name, leave <default> to have one generated",
       "Type" : "String",
-      "Default" : "",
-      "AllowedPattern" : "([a-z][a-z0-9\\-\\.]*)?",
+      "Default" : "<default>",
+      "AllowedPattern" : "(<default>|[a-z][a-z0-9\\-\\.]*)",
       "MinLength": "0",
       "MaxLength": "64",
-      "ConstraintDescription" : "must be a valid host name, eg: moodle.example.com, leave empty to use default"
+      "ConstraintDescription" : "must be a valid host name, eg: moodle.example.com, or leave '<default>' to use EC2 hostname"
     },
     "HostedZoneName": {
       "Description": "Required to register HostName automatically, otherwise must configure DNS in your current provider",
@@ -111,7 +111,7 @@
       "ParameterGroups" : [
         {
           "Label" : { "default" : "Moodle Configuration" },
-          "Parameters" : [ "MoodleVersion", "MoodleAdminEmail", "MoodleAdminPassword", "MoodleSiteFullName", "MoodleSiteShortName" ]
+          "Parameters" : [ "MoodleSiteFullName", "MoodleSiteShortName", "MoodleAdminEmail", "MoodleAdminPassword", "MoodleVersion" ]
         },
         {
           "Label" : { "default" : "Network Configuration" },
@@ -188,11 +188,9 @@
   },
 
   "Conditions" : {
-    "UseHostName"     : { "Fn::Not": [ { "Fn::Equals" : ["", { "Ref": "HostName"}] } ] },
-    "DNSRegistration" : { "Fn::And": [
-        { "Condition": "UseHostName"},
-        { "Fn::Not": [ { "Fn::Equals" : ["", { "Ref": "HostedZoneName"}] } ] }
-    ]}
+    "UseHostName"     : { "Fn::Not": [ { "Fn::Equals": ["<default>", { "Ref": "HostName"}] } ] },
+    "HasHostedZoneName": {"Fn::Not": [ { "Fn::Equals": ["", { "Ref": "HostedZoneName"}] } ] },
+    "DNSRegistration" : { "Fn::And": [ { "Condition": "UseHostName"}, { "Condition": "HasHostedZoneName"} ] }
   },
 
   "Resources" : {
@@ -481,7 +479,7 @@
       "Type" : "AWS::Route53::RecordSet",
       "Condition" : "DNSRegistration",
       "Properties" : {
-        "HostedZoneId" : { "Ref" : "HostedZoneName" },
+        "HostedZoneId" : { "Fn::If" : [ "DNSRegistration", { "Ref": "HostedZoneName" }, { "Ref" : "AWS::NoValue"} ] },
         "Comment" : "Moodle DNS",
         "Name" : { "Ref" : "HostName"},
         "Type" : "A",
