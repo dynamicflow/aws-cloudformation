@@ -17,16 +17,16 @@
       "ConstraintDescription" : "must be a valid EC2 instance type."
     },
     "HostName" : {
-      "Description" : "Host Name",
+      "Description" : "Host Name, leave empty to use default",
       "Type" : "String",
-      "Default" : "moodle",
-      "AllowedPattern" : "[a-z][a-zA-Z0-9\\-\\.]*",
-      "MinLength": "1",
+      "Default" : "",
+      "AllowedPattern" : "([a-z][a-z0-9\\-\\.]*)?",
+      "MinLength": "0",
       "MaxLength": "64",
-      "ConstraintDescription" : "must be a valid host name."
+      "ConstraintDescription" : "must be a valid host name, eg: moodle.example.com, leave empty to use default"
     },
     "HostedZoneName": {
-      "Description": "Route53 Domain Name",
+      "Description": "Required to register HostName automatically, otherwise must configure DNS in your current provider",
       "Type": "AWS::Route53::HostedZone::Id"
     },
     "CorporateCidrIp": {
@@ -64,6 +64,12 @@
       "MaxLength": "41",
       "AllowedPattern" : "[a-zA-Z0-9]*",
       "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+    "MoodleVersion" : {
+      "Description" : "Moodle version number or latest development",
+      "Type" : "String",
+      "Default" : "3.2.1",
+      "AllowedValues" : [ "3.0.8", "3.1.4", "3.2.1", "development"]
     },
     "MoodleAdminPassword" : {
       "NoEcho": "true",
@@ -105,7 +111,7 @@
       "ParameterGroups" : [
         {
           "Label" : { "default" : "Moodle Configuration" },
-          "Parameters" : [ "MoodleAdminEmail", "MoodleAdminPassword", "MoodleSiteFullName", "MoodleSiteShortName" ]
+          "Parameters" : [ "MoodleVersion", "MoodleAdminEmail", "MoodleAdminPassword", "MoodleSiteFullName", "MoodleSiteShortName" ]
         },
         {
           "Label" : { "default" : "Network Configuration" },
@@ -121,6 +127,7 @@
         }
       ],
       "ParameterLabels" : {
+        "MoodleVersion": { "default" : "Moodle Version" },
         "MoodleAdminEmail": { "default" : "Admin Email" },
         "MoodleAdminPassword": { "default" : "Admin Password" },
         "MoodleSiteFullName": { "default" : "Site Full Name" },
@@ -155,8 +162,8 @@
       "t2.medium"   : { "Arch" : "NATHVM64"  },
       "t2.large"    : { "Arch" : "NATHVM64"  },
       "t2.xlarge"   : { "Arch" : "NATHVM64"  }
-    }
-  ,
+    },
+
     "AWSRegionArch2AMI" : {
       "us-east-1"        : {"PV64" : "ami-8ff710e2", "HVM64" : "ami-0b33d91d", "HVMG2" : "ami-4afd1d27"},
       "us-east-2"        : {"HVM64" : "ami-c55673a0"},
@@ -170,8 +177,22 @@
       "ap-southeast-2"   : {"PV64" : "ami-8f94b9ec", "HVM64" : "ami-d9d7f9ba", "HVMG2" : "ami-543d1137"},
       "sa-east-1"        : {"PV64" : "ami-e188018d", "HVM64" : "ami-106ee57c", "HVMG2" : "NOT_SUPPORTED"},
       "cn-north-1"       : {"PV64" : "ami-77a46e1a", "HVM64" : "ami-05a66c68", "HVMG2" : "NOT_SUPPORTED"}
-    }
+    },
 
+    "MoodleDownload": {
+      "3.0.8":         { "URL": "https://download.moodle.org/download.php/direct/stable30/moodle-3.0.8.tgz" },
+      "3.1.4":       { "URL": "https://download.moodle.org/download.php/direct/stable31/moodle-3.1.4.tgz" },
+      "3.2.1":       { "URL": "https://download.moodle.org/download.php/direct/stable32/moodle-3.2.1.tgz" },
+      "development": { "URL": "https://download.moodle.org/download.php/direct/moodle/moodle-latest.zip" }
+    }
+  },
+
+  "Conditions" : {
+    "UseHostName"     : { "Fn::Not": [ { "Fn::Equals" : ["", { "Ref": "HostName"}] } ] },
+    "DNSRegistration" : { "Fn::And": [
+        { "Condition": "UseHostName"},
+        { "Fn::Not": [ { "Fn::Equals" : ["", { "Ref": "HostedZoneName"}] } ] }
+    ]}
   },
 
   "Resources" : {
@@ -253,7 +274,7 @@
               }
             },
             "sources" : {
-              "/var/www" : "https://download.moodle.org/download.php/direct/stable32/moodle-3.2.1.tgz"
+              "/var/www" : { "Fn::FindInMap" : [ "MoodleDownload", { "Ref" : "MoodleVersion" }, "URL" ] }
             },
             "files" : {
               "/tmp/setup.mysql" : {
@@ -370,7 +391,11 @@
               "01_configure_moodle" : {
                 "command" : { "Fn::Join" : [ ";", [
                     "mv -fT /var/www/moodle /var/www/html",
-                    "sed -i \"s/WWW_ROOT/`curl -s http://169.254.169.254/latest/meta-data/public-hostname`/g\" /tmp/config.php",
+                    {"Fn::If" : [
+                      "UseHostName",
+                      { "Fn::Join" : [ "", [ "sed -i \"s/WWW_ROOT/", { "Ref": "HostName"}, "/g\" /tmp/config.php" ]]},
+                      "sed -i \"s/WWW_ROOT/`curl -s http://169.254.169.254/latest/meta-data/public-hostname`/g\" /tmp/config.php"
+                    ]},
                     "mv /tmp/config.php /var/www/html",
                     "chown -R root /var/www/html",
                     "chmod -R 0755 /var/www/html"
@@ -454,6 +479,7 @@
 
     "DNSRecord" : {
       "Type" : "AWS::Route53::RecordSet",
+      "Condition" : "DNSRegistration",
       "Properties" : {
         "HostedZoneId" : { "Ref" : "HostedZoneName" },
         "Comment" : "Moodle DNS",
@@ -504,7 +530,8 @@
 
   "Outputs" : {
     "WebsiteURL" : {
-      "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "WebServer", "PublicDnsName" ]}, "/" ]]},
+      "Value" : { "Fn::Join" : ["", [
+        "http://", {"Fn::If" : [ "UseHostName", { "Ref": "HostName"}, { "Fn::GetAtt" : [ "WebServer", "PublicDnsName" ]} ]}, "/" ]]},
       "Description" : "Moodle Website"
     }
   }
