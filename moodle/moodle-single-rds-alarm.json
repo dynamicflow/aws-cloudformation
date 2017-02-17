@@ -16,8 +16,17 @@
       "AllowedValues" : [ "t2.micro", "t2.small", "t2.medium", "m1.small", "m1.medium", "m1.large", "m1.xlarge", "m2.xlarge", "m2.2xlarge", "m2.4xlarge", "m3.medium", "m3.large", "m3.xlarge", "m3.2xlarge", "c1.medium", "c1.xlarge", "c3.large", "c3.xlarge", "c3.2xlarge", "c3.4xlarge", "c3.8xlarge", "c4.large", "c4.xlarge", "c4.2xlarge", "c4.4xlarge", "c4.8xlarge", "g2.2xlarge", "r3.large", "r3.xlarge", "r3.2xlarge", "r3.4xlarge", "r3.8xlarge", "i2.xlarge", "i2.2xlarge", "i2.4xlarge", "i2.8xlarge", "d2.xlarge", "d2.2xlarge", "d2.4xlarge", "d2.8xlarge", "hi1.4xlarge", "hs1.8xlarge", "cr1.8xlarge", "cc2.8xlarge", "cg1.4xlarge"],
       "ConstraintDescription" : "must be a valid EC2 instance type."
     },
-    "R53HostedZoneId": {
-      "Description": "Route53 Domain Name",
+    "HostName" : {
+      "Description" : "Host Name, leave empty to have one generated",
+      "Type" : "String",
+      "Default" : "",
+      "AllowedPattern" : "([a-z][a-z0-9\\-\\.]*)?",
+      "MinLength": "0",
+      "MaxLength": "64",
+      "ConstraintDescription" : "must be a valid host name, eg: moodle.example.com, or leave empty to use EC2 hostname"
+    },
+    "HostedZoneName": {
+      "Description": "Required to register HostName automatically, otherwise must configure DNS in your current provider",
       "Type": "AWS::Route53::HostedZone::Id"
     },
     "CorporateCidrIp": {
@@ -62,6 +71,12 @@
       "AllowedValues" : [ "db.t2.micro","db.t2.small","db.t2.medium","db.t2.large", "db.m3.medium", "db.m3.large", "db.m3.xlarge", "db.m3.2xlarge","db.m4.large","db.m4.xlarge","db.m4.2xlarge","db.m4.4xlarge","db.m4.10xlarge","db.r3.large","db.r3.xlarge","db.r3.2xlarge","db.r3.4xlarge","db.r3.8xlarge"],
       "ConstraintDescription" : "must be a valid RDS instance class."
     },
+    "MoodleVersion" : {
+      "Description" : "Moodle version number or latest development",
+      "Type" : "String",
+      "Default" : "3.2.1",
+      "AllowedValues" : [ "3.0.8", "3.1.4", "3.2.1", "development"]
+    },
     "MoodleAdminPassword" : {
       "NoEcho": "true",
       "Description" : "Moodle Admin Password",
@@ -94,6 +109,16 @@
       "MaxLength": "20",
       "AllowedPattern" : "[a-zA-Z0-9 \\-]*",
       "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+    "MoodleUUID" : {
+      "NoEcho": "true",
+      "Description" : "UUID used for several purposes in cloudformation",
+      "Default": "8824dc9d-b814-4add-b239-454aeef0a4e4",
+      "Type": "String",
+      "MinLength": "36",
+      "MaxLength": "36",
+      "AllowedPattern" : "[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}",
+      "ConstraintDescription" : "must contain a valid UUID"
     }
   },
 
@@ -102,11 +127,11 @@
       "ParameterGroups" : [
         {
           "Label" : { "default" : "Moodle Configuration" },
-          "Parameters" : [ "MoodleAdminEmail", "MoodleAdminPassword", "MoodleSiteFullName", "MoodleSiteShortName" ]
+          "Parameters" : [ "MoodleSiteFullName", "MoodleSiteShortName", "MoodleAdminEmail", "MoodleAdminPassword", "MoodleVersion","MoodleUUID" ]
         },
         {
           "Label" : { "default" : "Network Configuration" },
-          "Parameters" : [ "R53HostedZoneId", "CorporateCidrIp"]
+          "Parameters" : [ "HostedZoneName", "HostName", "CorporateCidrIp"]
         },
         {
           "Label" : { "default" : "Web Server Configuration" },
@@ -118,18 +143,20 @@
         }
       ],
       "ParameterLabels" : {
+        "MoodleUUID": { "default" : "Moodle UUID" },
+        "MoodleVersion": { "default" : "Moodle Version" },
         "MoodleAdminEmail": { "default" : "Admin Email" },
         "MoodleAdminPassword": { "default" : "Admin Password" },
         "MoodleSiteFullName": { "default" : "Site Full Name" },
         "MoodleSiteShortName": { "default" : "Site Short Name" },
-
-        "R53HostedZoneId": { "default" : "Domain Name" },
+        "HostName": { "default" : "Host Name" },
+        "HostedZoneName": { "default" : "Hosted Zone Name" },
         "CorporateCidrIp": { "default" : "Admin IP Address" },
 
         "InstanceType": { "default" : "Instance Type" },
         "KeyName": { "default" : "SSH Key Name" },
 
-        "DBInstanceClass": { "default" : "Maximum Nodes" },
+        "DBInstanceClass": { "default" : "Instance Type" },
         "DBName": { "default" : "Name" },
         "DBMasterPassword": { "default" : "Password" },
         "DBAllocatedStorage": { "default" : "Capacity" }
@@ -152,10 +179,10 @@
       "t2.medium"   : { "Arch" : "NATHVM64"  },
       "t2.large"    : { "Arch" : "NATHVM64"  },
       "t2.xlarge"   : { "Arch" : "NATHVM64"  }
-    }
-  ,
+    },
+
     "AWSRegionArch2AMI" : {
-      "us-east-1"        : {"PV64" : "ami-8ff710e2", "HVM64" : "ami-0b33d91d", "HVMG2" : "ami-4afd1d27"},
+      "us-east-1"        : {"PV64" : "ami-7a3dd76c", "HVM64" : "ami-0b33d91d", "HVMG2" : "ami-0b33d91d"},
       "us-east-2"        : {"HVM64" : "ami-c55673a0"},
       "us-west-2"        : {"PV64" : "ami-eff1028f", "HVM64" : "ami-f303fb93", "HVMG2" : "ami-ee897b8e"},
       "us-west-1"        : {"PV64" : "ami-ac85fbcc", "HVM64" : "ami-11790371", "HVMG2" : "ami-69106909"},
@@ -167,19 +194,120 @@
       "ap-southeast-2"   : {"PV64" : "ami-8f94b9ec", "HVM64" : "ami-d9d7f9ba", "HVMG2" : "ami-543d1137"},
       "sa-east-1"        : {"PV64" : "ami-e188018d", "HVM64" : "ami-106ee57c", "HVMG2" : "NOT_SUPPORTED"},
       "cn-north-1"       : {"PV64" : "ami-77a46e1a", "HVM64" : "ami-05a66c68", "HVMG2" : "NOT_SUPPORTED"}
+    },
+
+    "MoodleDownload": {
+      "3.0.8":         { "URL": "https://download.moodle.org/download.php/direct/stable30/moodle-3.0.8.tgz" },
+      "3.1.4":       { "URL": "https://download.moodle.org/download.php/direct/stable31/moodle-3.1.4.tgz" },
+      "3.2.1":       { "URL": "https://download.moodle.org/download.php/direct/stable32/moodle-3.2.1.tgz" },
+      "development": { "URL": "https://download.moodle.org/download.php/direct/moodle/moodle-latest.zip" }
     }
   },
 
   "Conditions" : {
+    "UseHostName"     : { "Fn::Not": [ { "Fn::Equals": ["", { "Ref": "HostName"}] } ] },
+    "HasHostedZoneName": {"Fn::Not": [ { "Fn::Equals": ["", { "Ref": "HostedZoneName"}] } ] },
+    "DNSRegistration" : { "Fn::And": [ { "Condition": "UseHostName"}, { "Condition": "HasHostedZoneName"} ] },
     "Is-EC2-VPC"     : { "Fn::Or" : [
       {"Fn::Equals" : [{"Ref" : "AWS::Region"}, "eu-central-1" ]},
       {"Fn::Equals" : [{"Ref" : "AWS::Region"}, "cn-north-1" ]},
       {"Fn::Equals" : [{"Ref" : "AWS::Region"}, "us-east-2" ]}
     ]},
-    "Is-EC2-Classic" : { "Fn::Not" : [{ "Condition" : "Is-EC2-VPC"}]}
+    "Is-EC2-Classic" : { "Fn::Not" : [{ "Condition" : "Is-EC2-VPC"}]},
   },
 
   "Resources" : {
+    "CronRole" : {
+      "Type"  : "AWS::IAM::Role",
+      "Properties" : {
+        "RoleName": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "CronRole" ] ] },
+        "AssumeRolePolicyDocument" : {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [ {
+          "PolicyName": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "CronRole" ] ] },
+          "PolicyDocument": {
+            "Version" : "2012-10-17",
+            "Statement": [ {
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": "arn:aws:logs:*:*:*"
+            }]
+          }
+        }]
+      }
+    },
+    "Cron":  {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Description": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "Cron" ] ] },
+        "Handler": "index.handler",
+        "Role": { "Fn::GetAtt" : ["CronRole", "Arn"] },
+        "Code": {
+          "ZipFile": {
+            "Fn::Join": [
+              "",
+              [
+                "var http = require('http');\n",
+                "exports.handler = function (event, context) {\n",
+                "  http.get(process.env.CRON_URL, function (result) {\n",
+                "    console.log('Success, with: ' + result.statusCode);\n",
+                "    context.done(null);\n",
+                "  }).on('error', function (err) {\n",
+                "    console.log('Error, with: ' + err.message);\n",
+                "    context.done(\"Failed\");\n",
+                "  });\n",
+                "};\n"
+              ]
+            ]
+          }
+        },
+        "Runtime": "nodejs4.3",
+        "Timeout": "300",
+        "Environment": {
+          "Variables" : { "CRON_URL": { "Fn::Join": [ "", [
+            "http://",
+            {"Fn::If" : [ "UseHostName", { "Ref": "HostName"}, { "Fn::GetAtt" : [ "WebServer", "PublicDnsName" ]} ]},
+            "/admin/cron.php?password=",
+            { "Ref" : "MoodleUUID" }
+          ]]}}
+        }
+      }
+    },
+    "EventRuleToCronPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": { "Ref": "Cron" },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": { "Fn::GetAtt": ["EventRule", "Arn"] }
+      }
+    },
+    "EventRule": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Description": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "EventRuleCron" ] ] },
+        "ScheduleExpression": "rate(1 minute)",
+        "Targets": [ {
+          "Arn": { "Fn::GetAtt": ["Cron", "Arn"] },
+          "Id": "Cron"
+        }]
+      }
+    },
     "WebServerSecurityGroup" : {
       "Type" : "AWS::EC2::SecurityGroup",
       "Properties" : {
@@ -258,7 +386,7 @@
               }
             },
             "sources" : {
-              "/var/www" : "https://download.moodle.org/download.php/direct/stable32/moodle-3.2.1.tgz"
+              "/var/www" : { "Fn::FindInMap" : [ "MoodleDownload", { "Ref" : "MoodleVersion" }, "URL" ] }
             },
             "files" : {
               "/etc/nginx/nginx.conf" : {
@@ -331,6 +459,8 @@
                   "$CFG->admin = 'admin';\n\n",
                   "$CFG->xsendfile = 'X-Accel-Redirect';\n",
                   "$CFG->xsendfilealiases = array('/dataroot/' => $CFG->dataroot);\n\n",
+                  "$CFG->cronclionly=false;\n\n",
+                  "$CFG->cronremotepassword = '",{ "Ref" : "MoodleUUID" }, "';\n",
                   "$CFG->session_handler_class = '\\core\\session\\memcached';\n",
                   "$CFG->session_memcached_save_path = '127.0.0.1:11211';\n",
                   "$CFG->session_memcached_prefix = 'memc.sess.key.';\n",
@@ -342,13 +472,6 @@
                 "mode" : "000500",
                 "owner" : "root",
                 "group" : "root"
-              },
-              "/etc/cron.d/moodle" : {
-                "content" : { "Fn::Join" : [ "", [
-                  "* * * * * * apache /usr/bin/php /var/www/html/admin/cli/cron.php"
-                ] ] },
-                "owner": "root",
-                "group": "root"
               }
             },
             "services" : {
@@ -363,7 +486,11 @@
               "01_configure_moodle" : {
                 "command" : { "Fn::Join" : [ ";", [
                     "mv -fT /var/www/moodle /var/www/html",
-                    "sed -i \"s/WWW_ROOT/`curl -s http://169.254.169.254/latest/meta-data/public-hostname`/g\" /tmp/config.php",
+                    {"Fn::If" : [
+                      "UseHostName",
+                      { "Fn::Join" : [ "", [ "sed -i \"s/WWW_ROOT/", { "Ref": "HostName"}, "/g\" /tmp/config.php" ]]},
+                      "sed -i \"s/WWW_ROOT/`curl -s http://169.254.169.254/latest/meta-data/public-hostname`/g\" /tmp/config.php"
+                    ]},
                     "mv /tmp/config.php /var/www/html",
                     "chown -R root /var/www/html",
                     "chmod -R 0755 /var/www/html"
@@ -482,6 +609,20 @@
       "DeletionPolicy" : "Snapshot"
     },
 
+    "DNSRecord" : {
+      "Type" : "AWS::Route53::RecordSet",
+      "Condition" : "DNSRegistration",
+      "Properties" : {
+        "HostedZoneId" : { "Fn::If" : [ "DNSRegistration", { "Ref": "HostedZoneName" }, { "Ref" : "AWS::NoValue"} ] },
+        "Comment" : "Moodle DNS",
+        "Name" : { "Ref" : "HostName"},
+        "Type" : "A",
+        "TTL" : "300",
+        "ResourceRecords" : [
+          { "Fn::GetAtt" : [ "WebServer", "PublicIp" ] }
+        ]
+      }
+    },
     "NotificationTopic" : {
       "Type" : "AWS::SNS::Topic",
       "Properties": {
@@ -538,7 +679,8 @@
 
   "Outputs" : {
     "WebsiteURL" : {
-      "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "WebServer", "PublicDnsName" ]}, "/" ]]},
+      "Value" : { "Fn::Join" : ["", [
+        "http://", {"Fn::If" : [ "UseHostName", { "Ref": "HostName"}, { "Fn::GetAtt" : [ "WebServer", "PublicDnsName" ]} ]}, "/" ]]},
       "Description" : "Moodle Website"
     }
   }
