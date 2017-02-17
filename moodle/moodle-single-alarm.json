@@ -13,17 +13,17 @@
       "Description" : "WebServer EC2 instance type",
       "Type" : "String",
       "Default" : "t2.medium",
-      "AllowedValues" : [ "t2.micro", "t2.small", "t2.medium", "t2.large", "t2.xlarge"],
+      "AllowedValues" : [ "t2.micro", "t2.small", "t2.medium", "m1.small", "m1.medium", "m1.large", "m1.xlarge", "m2.xlarge", "m2.2xlarge", "m2.4xlarge", "m3.medium", "m3.large", "m3.xlarge", "m3.2xlarge", "c1.medium", "c1.xlarge", "c3.large", "c3.xlarge", "c3.2xlarge", "c3.4xlarge", "c3.8xlarge", "c4.large", "c4.xlarge", "c4.2xlarge", "c4.4xlarge", "c4.8xlarge", "g2.2xlarge", "r3.large", "r3.xlarge", "r3.2xlarge", "r3.4xlarge", "r3.8xlarge", "i2.xlarge", "i2.2xlarge", "i2.4xlarge", "i2.8xlarge", "d2.xlarge", "d2.2xlarge", "d2.4xlarge", "d2.8xlarge", "hi1.4xlarge", "hs1.8xlarge", "cr1.8xlarge", "cc2.8xlarge", "cg1.4xlarge"],
       "ConstraintDescription" : "must be a valid EC2 instance type."
     },
     "HostName" : {
-      "Description" : "Host Name, leave <default> to have one generated",
+      "Description" : "Host Name, leave empty to have one generated",
       "Type" : "String",
-      "Default" : "<default>",
-      "AllowedPattern" : "(<default>|[a-z][a-z0-9\\-\\.]*)",
+      "Default" : "",
+      "AllowedPattern" : "([a-z][a-z0-9\\-\\.]*)?",
       "MinLength": "0",
       "MaxLength": "64",
-      "ConstraintDescription" : "must be a valid host name, eg: moodle.example.com, or leave '<default>' to use EC2 hostname"
+      "ConstraintDescription" : "must be a valid host name, eg: moodle.example.com, or leave empty to use EC2 hostname"
     },
     "HostedZoneName": {
       "Description": "Required to register HostName automatically, otherwise must configure DNS in your current provider",
@@ -103,6 +103,16 @@
       "MaxLength": "20",
       "AllowedPattern" : "[a-zA-Z0-9 \\-]*",
       "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+    "MoodleUUID" : {
+      "NoEcho": "true",
+      "Description" : "UUID used for several purposes in cloudformation",
+      "Default": "8824dc9d-b814-4add-b239-454aeef0a4e4",
+      "Type": "String",
+      "MinLength": "36",
+      "MaxLength": "36",
+      "AllowedPattern" : "[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}",
+      "ConstraintDescription" : "must contain a valid UUID"
     }
   },
 
@@ -111,7 +121,7 @@
       "ParameterGroups" : [
         {
           "Label" : { "default" : "Moodle Configuration" },
-          "Parameters" : [ "MoodleSiteFullName", "MoodleSiteShortName", "MoodleAdminEmail", "MoodleAdminPassword", "MoodleVersion" ]
+          "Parameters" : [ "MoodleSiteFullName", "MoodleSiteShortName", "MoodleAdminEmail", "MoodleAdminPassword", "MoodleVersion","MoodleUUID" ]
         },
         {
           "Label" : { "default" : "Network Configuration" },
@@ -127,6 +137,7 @@
         }
       ],
       "ParameterLabels" : {
+        "MoodleUUID": { "default" : "Moodle UUID" },
         "MoodleVersion": { "default" : "Moodle Version" },
         "MoodleAdminEmail": { "default" : "Admin Email" },
         "MoodleAdminPassword": { "default" : "Admin Password" },
@@ -188,19 +199,113 @@
   },
 
   "Conditions" : {
-    "UseHostName"     : { "Fn::Not": [ { "Fn::Equals": ["<default>", { "Ref": "HostName"}] } ] },
+    "UseHostName"     : { "Fn::Not": [ { "Fn::Equals": ["", { "Ref": "HostName"}] } ] },
     "HasHostedZoneName": {"Fn::Not": [ { "Fn::Equals": ["", { "Ref": "HostedZoneName"}] } ] },
     "DNSRegistration" : { "Fn::And": [ { "Condition": "UseHostName"}, { "Condition": "HasHostedZoneName"} ] }
   },
 
   "Resources" : {
+    "CronRole" : {
+      "Type"  : "AWS::IAM::Role",
+      "Properties" : {
+        "RoleName": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "CronRole" ] ] },
+        "AssumeRolePolicyDocument" : {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [ {
+          "PolicyName": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "CronRole" ] ] },
+          "PolicyDocument": {
+            "Version" : "2012-10-17",
+            "Statement": [ {
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": "arn:aws:logs:*:*:*"
+            }]
+          }
+        }]
+      }
+    },
+    "Cron":  {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Description": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "Cron" ] ] },
+        "Handler": "index.handler",
+        "Role": { "Fn::GetAtt" : ["CronRole", "Arn"] },
+        "Code": {
+          "ZipFile": {
+            "Fn::Join": [
+              "",
+              [
+                "var http = require('http');\n",
+                "exports.handler = function (event, context) {\n",
+                "  http.get(process.env.CRON_URL, function (result) {\n",
+                "    console.log('Success, with: ' + result.statusCode);\n",
+                "    context.done(null);\n",
+                "  }).on('error', function (err) {\n",
+                "    console.log('Error, with: ' + err.message);\n",
+                "    context.done(\"Failed\");\n",
+                "  });\n",
+                "};\n"
+              ]
+            ]
+          }
+        },
+        "Runtime": "nodejs4.3",
+        "Timeout": "300",
+        "Environment": {
+          "Variables" : { "CRON_URL": { "Fn::Join": [ "", [
+            "http://",
+            {"Fn::If" : [ "UseHostName", { "Ref": "HostName"}, { "Fn::GetAtt" : [ "WebServer", "PublicDnsName" ]} ]},
+            "/admin/cron.php?password=",
+            { "Ref" : "MoodleUUID" }
+          ]]}}
+        }
+      }
+    },
+    "EventRuleToCronPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": { "Ref": "Cron" },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": { "Fn::GetAtt": ["EventRule", "Arn"] }
+      }
+    },
+    "EventRule": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Description": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "EventRuleCron" ] ] },
+        "ScheduleExpression": "rate(1 minute)",
+        "Targets": [ {
+          "Arn": { "Fn::GetAtt": ["Cron", "Arn"] },
+          "Id": "Cron"
+        }]
+      }
+    },
     "WebServerSecurityGroup" : {
       "Type" : "AWS::EC2::SecurityGroup",
       "Properties" : {
         "GroupDescription" : "Enable HTTP access via port 80 locked down to the load balancer + SSH access",
         "SecurityGroupIngress" : [
-          {"IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0"},
-          {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Ref" : "CorporateCidrIp"}}
+          { "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "CidrIp": "0.0.0.0/0"},
+          { "IpProtocol": "tcp", "FromPort": "22", "ToPort": "22", "CidrIp": { "Ref": "CorporateCidrIp" } }
+        ],
+        "Tags": [
+          { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "WebServer" ] ] } }
         ]
       }
     },
@@ -246,7 +351,6 @@
               }
             }
           },
-
           "install_moodle" : {
             "packages" : {
               "yum" : {
@@ -356,6 +460,8 @@
                   "$CFG->admin = 'admin';\n\n",
                   "$CFG->xsendfile = 'X-Accel-Redirect';\n",
                   "$CFG->xsendfilealiases = array('/dataroot/' => $CFG->dataroot);\n\n",
+                  "$CFG->cronclionly=false;\n\n",
+                  "$CFG->cronremotepassword = '",{ "Ref" : "MoodleUUID" }, "';\n",
                   "$CFG->session_handler_class = '\\core\\session\\memcached';\n",
                   "$CFG->session_memcached_save_path = '127.0.0.1:11211';\n",
                   "$CFG->session_memcached_prefix = 'memc.sess.key.';\n",
@@ -367,13 +473,6 @@
                 "mode" : "000500",
                 "owner" : "root",
                 "group" : "root"
-              },
-              "/etc/cron.d/moodle" : {
-                "content" : { "Fn::Join" : [ "", [
-                  "* * * * * * apache /usr/bin/php /var/www/html/admin/cli/cron.php"
-                ] ] },
-                "owner": "root",
-                "group": "root"
               }
             },
             "services" : {
@@ -489,14 +588,12 @@
         ]
       }
     },
-
     "NotificationTopic" : {
       "Type" : "AWS::SNS::Topic",
       "Properties": {
         "DisplayName": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "Notification" ] ] }
       }
     },
-
     "MySubscription" : {
       "Type" : "AWS::SNS::Subscription",
       "Properties" : {
