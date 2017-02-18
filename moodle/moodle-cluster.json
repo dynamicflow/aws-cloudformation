@@ -188,7 +188,6 @@
         "HostName": { "default" : "Host Name" },
         "HostedZoneName": { "default" : "Hosted Zone Name" },
         "CorporateCidrIp": { "default" : "Admin IP Address" },
-
         "InstanceType": { "default" : "Instance Type" },
         "KeyName": { "default" : "SSH Key Name" },
         "AsgMaxSize" : { "default" : "Desired Node Count"},
@@ -198,11 +197,9 @@
         "DBMasterPassword": { "default" : "Password" },
         "DBAllocatedStorage": { "default" : "Capacity" },
         "DBMultiAZ": { "default" : "High Availability" },
-
         "CacheNodeType": { "default" : "Instance Type" },
         "CacheNumNodes": { "default" : "Quantity" },
         "CacheMultiAZ": { "default" : "High Availability" }
-
       }
     }
   },
@@ -229,7 +226,6 @@
       "r4.8xlarge" : { "Arch" : "HVM64"  },
       "r4.16xlarge": { "Arch" : "HVM64"  }
     },
-
     "AWSRegionArch2AMI" : {
       "us-east-1"        : {"HVM64" : "ami-0b33d91d"},
       "us-east-2"        : {"HVM64" : "ami-c55673a0"},
@@ -244,14 +240,12 @@
       "sa-east-1"        : {"HVM64" : "ami-106ee57c"},
       "cn-north-1"       : {"HVM64" : "ami-05a66c68"}
     },
-
     "MoodleDownload": {
       "3.0.8":         { "URL": "https://download.moodle.org/download.php/direct/stable30/moodle-3.0.8.tgz" },
       "3.1.4":       { "URL": "https://download.moodle.org/download.php/direct/stable31/moodle-3.1.4.tgz" },
       "3.2.1":       { "URL": "https://download.moodle.org/download.php/direct/stable32/moodle-3.2.1.tgz" },
       "development": { "URL": "https://download.moodle.org/download.php/direct/moodle/moodle-latest.zip" }
     },
-
     "CacheMultiAZMap" : {
       "yes": { "AZMode": "cross-az" },
       "no" : { "AZMode": "single-az" }
@@ -612,7 +606,7 @@
         "VpcId": { "Ref": "VPC" },
         "GroupDescription": "Elasticache Security Group",
         "SecurityGroupIngress": [
-          { "IpProtocol": "tcp", "FromPort": "11211", "ToPort": "11211", "SourceSecurityGroupId" : { "Fn::GetAtt": ["WebServerSecurityGroup","GroupId"] } } ],
+          { "IpProtocol": "tcp", "FromPort": "6379", "ToPort": "6379", "SourceSecurityGroupId" : { "Fn::GetAtt": ["WebServerSecurityGroup","GroupId"] } } ],
         "Tags": [
           { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "ElastiCache" ] ] } }
         ]
@@ -648,7 +642,7 @@
     "FileSystem": {
       "Type": "AWS::EFS::FileSystem",
       "Properties": {
-        "PerformanceMode": "maxIO",
+        "PerformanceMode": "generalPurpose",
         "FileSystemTags": [
           { "Key": "Name", "Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "MoodleData" ] ] } }
         ]
@@ -801,7 +795,7 @@
                 "php56-xmlrpc"          : [],
                 "php56-process"         : [],
                 "php56-jsonc"           : [],
-                "php56-pecl-memcached"  : [],
+                "php56-pecl-redis"      : [],
                 "php56-mysqlnd"         : []
               }
             },
@@ -858,6 +852,25 @@
                 "owner" : "root",
                 "group" : "root"
               },
+              "/etc/php-fpm.d/redis.ini" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "extension = redis.so\n"
+                ]]}
+              },
+              "/tmp/update-php-ini.sh" : {
+                "content" : { "Fn::Join" : [ "", [
+                  "#!/bin/bash\n",
+                  "upload_max_filesize=32M\n",
+                  "post_max_size=32M\n",
+                  "for key in upload_max_filesize post_max_size\n",
+                  "do\n",
+                  "sed -i \"s/^\\($key\\).*/\\1 $(eval echo \\${$key})/\" /etc/php.ini\n",
+                  "done\n"
+                ]]},
+                "mode" : "000500",
+                "owner" : "root",
+                "group" : "root"
+              },
               "/tmp/config.php" : {
                 "content" : { "Fn::Join" : [ "", [
                   "<?php\n",
@@ -880,13 +893,15 @@
                   "$CFG->xsendfile = 'X-Accel-Redirect';\n",
                   "$CFG->xsendfilealiases = array('/dataroot/' => $CFG->dataroot);\n\n",
                   "$CFG->cronclionly=false;\n\n",
-                  "$CFG->cronremotepassword = '",{ "Ref" : "MoodleUUID" }, "';\n",
-                  "$CFG->session_handler_class = '\\core\\session\\memcached';\n",
-                  "$CFG->session_memcached_save_path = '", { "Fn::GetAtt": [ "ElasticacheCluster", "ConfigurationEndpoint.Address" ] },":11211';\n",
-                  "$CFG->session_memcached_prefix = 'memc.sess.key.';\n",
-                  "$CFG->session_memcached_acquire_lock_timeout = 120;\n",
-                  "$CFG->session_memcached_lock_expire = 7200;\n",
-                  "$CFG->cachestore_memcached = '", { "Fn::GetAtt": [ "ElasticacheCluster", "ConfigurationEndpoint.Address" ] },":11211';\n\n",
+                  "$CFG->cronremotepassword = '",{ "Ref" : "MoodleUUID" }, "';\n\n",
+                  "$CFG->session_handler_class = '\\core\\session\\redis';\n",
+                  "$CFG->session_redis_host = '", { "Fn::GetAtt": [ "ElasticacheCluster", "RedisEndpoint.Address" ] },"';\n",
+                  "$CFG->session_redis_port = 6379;  // Optional.;\n",
+                  "$CFG->session_redis_database = 0;  // Optional, default is db 0.;\n",
+                  "$CFG->session_redis_prefix = 'session'; // Optional, default is don't set one.;\n",
+                  "$CFG->session_redis_acquire_lock_timeout = 120;;\n",
+                  "$CFG->session_redis_lock_expire = 7200;\n\n",
+                  "$CFG->cachestore_redis = '", { "Fn::GetAtt": [ "ElasticacheCluster", "RedisEndpoint.Address" ] },":6379';\n\n",
                   "require_once(__DIR__ . '/lib/setup.php');\n"
                 ]]},
                 "mode" : "000500",
@@ -899,6 +914,11 @@
                 "nginx"     : { "enabled" : "true", "ensureRunning" : "true" },
                 "php-fpm"   : { "enabled" : "true", "ensureRunning" : "true" },
                 "crond"     : { "enabled" : "true", "ensureRunning" : "true" }
+              }
+            },
+            "commands": {
+              "01_update_php_ini": {
+                "command": "/tmp/update-php-ini.sh"
               }
             }
           },
@@ -981,7 +1001,7 @@
       "CreationPolicy" : {
         "ResourceSignal" : {
           "Timeout" : "PT15M",
-          "Count"   : { "Ref": "AsgDesiredSize" }
+          "Count"   : 1
         }
       },
       "UpdatePolicy" : {
@@ -989,7 +1009,7 @@
           "IgnoreUnmodifiedGroupSizeProperties" : "true"
         },
         "AutoScalingRollingUpdate" : {
-          "MinInstancesInService" : 1,
+          "MinInstancesInService" : 2,
           "MinSuccessfulInstancesPercent" : 100,
           "WaitOnResourceSignals": true
         }
@@ -1018,6 +1038,54 @@
         "Tags": [
           { "Key": "Name","Value": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "WebServer" ] ] }, "PropagateAtLaunch": "true" }
         ]
+      }
+    },
+    "AutoScalingUpPolicy" : {
+      "Type" : "AWS::AutoScaling::ScalingPolicy",
+      "Properties" : {
+        "AdjustmentType" : "ChangeInCapacity",
+        "AutoScalingGroupName" : {"Ref": "AutoScalingGroup"},
+        "Cooldown" : "120",
+        "ScalingAdjustment" : "1"
+      }
+    },
+    "AutoScalingPolicy": {
+      "Type" : "AWS::AutoScaling::ScalingPolicy",
+      "Properties" : {
+        "AutoScalingGroupName" : {"Ref": "AutoScalingGroup"},
+        "AdjustmentType" : "ChangeInCapacity",
+        "PolicyType" : "StepScaling",
+        "MetricAggregationType" : "Average",
+        "EstimatedInstanceWarmup" : "120",
+        "StepAdjustments": [
+          {
+            "MetricIntervalLowerBound": "50",
+            "MetricIntervalUpperBound" : "70",
+            "ScalingAdjustment": "1"
+          },
+          {
+            "MetricIntervalLowerBound": "90",
+            "ScalingAdjustment": "2"
+          }
+        ]
+      }
+    },
+    "WebServerAlarmHigh": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "Statistic": "Average",
+        "AlarmDescription": { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "WebServer High CPU Alarm" ] ] },
+        "Period" : "60",
+        "EvaluationPeriods" : "1",
+        "Threshold" : "70",
+        "AlarmActions": [ { "Ref" : "NotificationTopic" }, { "Ref": "AutoScalingUpPolicy" } ],
+        "Namespace": "AWS/EC2",
+        "Dimensions": [ {
+          "Name": "AutoScalingGroupName",
+          "Value": {"Ref": "AutoScalingGroup"}
+        } ],
+        "ComparisonOperator": "GreaterThanThreshold",
+        "MetricName": "CPUUtilization"
       }
     },
     "LoadBalancer": {
@@ -1080,7 +1148,7 @@
       "Type": "AWS::ElastiCache::CacheCluster",
       "Properties": {
         "AutoMinorVersionUpgrade": "true",
-        "Engine": "memcached",
+        "Engine": "redis",
         "CacheNodeType": {"Ref": "CacheNodeType"},
         "NumCacheNodes": {"Ref": "CacheNumNodes"},
         "AZMode" : { "Fn::FindInMap": [ "CacheMultiAZMap", { "Ref": "CacheMultiAZ" }, "AZMode" ] },
@@ -1097,7 +1165,7 @@
         "AllocatedStorage" : { "Ref" : "DBAllocatedStorage" },
         "StorageType": "gp2",
         "DBInstanceClass" : { "Ref" : "DBInstanceClass" },
-        "DBSubnetGroupName": { "Ref": "DBSubnetGroup" },
+        "DBSubnetGroupName": { "Ref": "SQLDatabaseSubnetGroup" },
         "Engine": "MySQL",
         "EngineVersion" : "5.7",
         "MasterUsername" : "master",
@@ -1110,11 +1178,37 @@
       },
       "DeletionPolicy" : "Snapshot"
     },
-    "DBSubnetGroup": {
+    "SQLDatabaseSubnetGroup": {
       "Type" : "AWS::RDS::DBSubnetGroup",
       "Properties" : {
-        "DBSubnetGroupDescription" : { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "DBSubnetGroup" ] ] },
+        "DBSubnetGroupDescription" : { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "SQLDatabaseSubnetGroup" ] ] },
         "SubnetIds" : [ { "Ref": "Subnet1" }, { "Ref": "Subnet2" }, { "Ref": "Subnet3" } ]
+      }
+    },
+    "SQLDatabaseEventSubscription": {
+      "Type" : "AWS::RDS::EventSubscription",
+      "Properties" : {
+        "SnsTopicArn" : { "Ref" : "NotificationTopic" },
+        "SourceIds" : [{ "Ref" : "SQLDatabase" }],
+        "SourceType" : "db-instance"
+      }
+    },
+    "SQLDatabaseHighCPUAlarm" : {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmDescription" : { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "MoodleDB High CPU Alarm" ] ] },
+        "AlarmActions" : [ { "Ref" : "NotificationTopic" } ],
+        "MetricName" : "CPUUtilization",
+        "Namespace" : "AWS/RDS",
+        "Statistic" : "Average",
+        "Period" : "60",
+        "EvaluationPeriods" : "2",
+        "Threshold" : "70",
+        "ComparisonOperator" : "GreaterThanThreshold",
+        "Dimensions" : [ {
+          "Name" : "InstanceId",
+          "Value" : {"Ref" : "SQLDatabase"}
+        } ]
       }
     },
     "DNSRecord" : {
@@ -1144,24 +1238,6 @@
         "Protocol" : "email",
         "TopicArn" : {"Ref" : "NotificationTopic"}
       }
-    },
-    "DBServerHighCPUAlarm" : {
-      "Type" : "AWS::CloudWatch::Alarm",
-      "Properties" : {
-        "AlarmDescription" : { "Fn::Join" : [ "-", [ { "Ref" : "AWS::StackName" }, "MoodleDB High CPU Alarm" ] ] },
-        "AlarmActions" : [ { "Ref" : "NotificationTopic" } ],
-        "MetricName" : "CPUUtilization",
-        "Namespace" : "AWS/RDS",
-        "Statistic" : "Average",
-        "Period" : "60",
-        "EvaluationPeriods" : "3",
-        "Threshold" : "70",
-        "ComparisonOperator" : "GreaterThanThreshold",
-        "Dimensions" : [ {
-          "Name" : "InstanceId",
-          "Value" : {"Ref" : "SQLDatabase"}
-        } ]
-      }
     }
   },
 
@@ -1173,7 +1249,7 @@
       "Description": "Moodle Website"
     },
     "ElastiCache" : {
-      "Value" : { "Fn::GetAtt": [ "ElasticacheCluster", "ConfigurationEndpoint.Address" ] },
+      "Value" : { "Fn::GetAtt": [ "ElasticacheCluster", "RedisEndpoint.Address" ] },
       "Description" : "ElastiCache URI"
     },
     "LoadBalancer" : {
